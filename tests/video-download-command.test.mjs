@@ -14,7 +14,8 @@ test("builds a video-output yt-dlp command for the absolute song range", () => {
   assert.match(command, /--ignore-config/);
   assert.match(command, /--format "bestvideo\*\+bestaudio\/best"/);
   assert.match(command, /--download-sections "\*65-245"/);
-  assert.match(command, /--force-keyframes-at-cuts/);
+  assert.match(command, /--no-force-keyframes-at-cuts/);
+  assert.doesNotMatch(command, /(?:^|\s)--force-keyframes-at-cuts(?:\s|$)/);
   assert.match(command, /--no-overwrites/);
   assert.match(command, /--output "tester-abcDEF12345-65-245\.\%\(ext\)s"/);
   assert.match(command, /watch\?v=abcDEF12345/);

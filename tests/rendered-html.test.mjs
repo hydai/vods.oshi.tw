@@ -121,6 +121,7 @@ test("server-renders VOD songs as inline playback buttons", async () => {
   );
   assert.match(html, /複製「第一首歌」的影片片段下載指令/);
   assert.match(html, /指令只會輸出影片片段/);
+  assert.match(html, /採快速切片/);
 
   const playButton = html.indexOf('class="song-row"');
   const playButtonEnd = html.indexOf("</button>", playButton);

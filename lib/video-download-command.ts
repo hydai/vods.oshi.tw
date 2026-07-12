@@ -38,7 +38,7 @@ export function buildVideoDownloadCommand({
     "--no-playlist",
     '--format "bestvideo*+bestaudio/best"',
     `--download-sections "*${startSeconds}-${endSeconds}"`,
-    "--force-keyframes-at-cuts",
+    "--no-force-keyframes-at-cuts",
     "--no-overwrites",
     `--output "${outputTemplate}"`,
     `"${videoUrl}"`,

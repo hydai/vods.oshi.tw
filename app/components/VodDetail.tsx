@@ -358,7 +358,10 @@ export function VodDetail({
 
           <div className="song-command-note">
             <Terminal aria-hidden="true" />
-            <span>指令只會輸出影片片段，需先安裝 yt-dlp 與 ffmpeg。</span>
+            <span>
+              指令只會輸出影片片段並採快速切片；需先安裝 yt-dlp 與
+              ffmpeg，切點可能受關鍵影格影響。
+            </span>
             <a
               href="https://github.com/yt-dlp/yt-dlp/wiki/Installation"
               target="_blank"
