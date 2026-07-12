@@ -121,7 +121,6 @@ const avatarHosts = new Set([
 ]);
 
 let activeDataset: VodDataset | null = null;
-let activeRefresh: Promise<VodDataset> | null = null;
 let nextRefreshAt = 0;
 
 function parseJson(bytes: Uint8Array, label: string): unknown {
@@ -133,7 +132,17 @@ function parseJson(bytes: Uint8Array, label: string): unknown {
   return JSON.parse(text) as unknown;
 }
 
-function assertJsonResponse(response: Response, label: string): void {
+function assertJsonResponse(
+  response: Response,
+  label: string,
+  expectedUrl: string,
+): void {
+  if (
+    response.redirected ||
+    (response.url && response.url !== expectedUrl)
+  ) {
+    throw new Error(`${label} redirected unexpectedly`);
+  }
   if (!response.ok) throw new Error(`${label} HTTP ${response.status}`);
   const mediaType = response.headers
     .get("content-type")
@@ -411,11 +420,10 @@ function parseManifest(raw: unknown): VodExportManifest {
 
 async function refreshDataset(): Promise<VodDataset> {
   const manifestResponse = await fetch(MANIFEST_URL, {
-    cache: "no-store",
-    redirect: "error",
+    redirect: "manual",
     headers: { accept: "application/json" },
   });
-  assertJsonResponse(manifestResponse, "Manifest");
+  assertJsonResponse(manifestResponse, "Manifest", MANIFEST_URL);
   const manifestBytes = await readBytesWithLimit(
     manifestResponse,
     MAX_MANIFEST_BYTES,
@@ -428,11 +436,10 @@ async function refreshDataset(): Promise<VodDataset> {
   }
 
   const snapshotResponse = await fetch(manifest.snapshotUrl, {
-    cache: "force-cache",
-    redirect: "error",
+    redirect: "manual",
     headers: { accept: "application/json" },
   });
-  assertJsonResponse(snapshotResponse, "Snapshot");
+  assertJsonResponse(snapshotResponse, "Snapshot", manifest.snapshotUrl);
   const snapshotBytes = await readBytesWithLimit(
     snapshotResponse,
     MAX_SNAPSHOT_BYTES,
@@ -448,6 +455,14 @@ async function refreshDataset(): Promise<VodDataset> {
   const snapshot = snapshotSchema.parse(rawSnapshot) as VodExportSnapshot;
   validateSnapshotSemantics(rawSnapshot, snapshot, manifest);
 
+  if (
+    activeDataset &&
+    activeDataset.manifest.publishedAt > manifest.publishedAt
+  ) {
+    nextRefreshAt = Date.now() + REFRESH_INTERVAL_MS;
+    return activeDataset;
+  }
+
   const candidate = { manifest, snapshot } satisfies VodDataset;
   activeDataset = candidate;
   nextRefreshAt = Date.now() + REFRESH_INTERVAL_MS;
@@ -456,14 +471,9 @@ async function refreshDataset(): Promise<VodDataset> {
 
 export async function getVodDataset(): Promise<VodDataset> {
   if (activeDataset && Date.now() < nextRefreshAt) return activeDataset;
-  if (!activeRefresh) {
-    activeRefresh = refreshDataset().finally(() => {
-      activeRefresh = null;
-    });
-  }
 
   try {
-    return await activeRefresh;
+    return await refreshDataset();
   } catch (error) {
     nextRefreshAt = Date.now() + FAILED_REFRESH_RETRY_MS;
     if (activeDataset) {

@@ -46,6 +46,14 @@ const manifest = JSON.stringify({
 
 const originalFetch = globalThis.fetch;
 globalThis.fetch = async (input, init) => {
+  if (init?.redirect === "error") {
+    throw new TypeError(
+      'Invalid redirect value, must be one of "follow" or "manual"',
+    );
+  }
+  if (init?.cache && !["no-store", "no-cache"].includes(init.cache)) {
+    throw new TypeError(`Unsupported cache mode: ${init.cache}`);
+  }
   const url = typeof input === "string" ? input : input.url;
   if (url === "https://data.oshi.tw/vod/v1/manifest.json") {
     return new Response(manifest, {
