@@ -92,6 +92,38 @@ async function render(pathname = "/") {
   );
 }
 
+test("redirects plain-HTTP visitors to HTTPS permanently", async () => {
+  const app = await worker();
+  const response = await app.fetch(
+    new Request("http://vods.oshi.tw/vod/tester/abcDEF12345?list=1", {
+      headers: { accept: "text/html" },
+    }),
+    {
+      ASSETS: {
+        fetch: async () => new Response("Not found", { status: 404 }),
+      },
+    },
+    {
+      waitUntil() {},
+      passThroughOnException() {},
+    },
+  );
+  assert.equal(response.status, 301);
+  assert.equal(
+    response.headers.get("location"),
+    "https://vods.oshi.tw/vod/tester/abcDEF12345?list=1",
+  );
+});
+
+test("keeps localhost HTTP for dev and stamps HSTS on responses", async () => {
+  const response = await render();
+  assert.equal(response.status, 200);
+  assert.match(
+    response.headers.get("strict-transport-security") ?? "",
+    /max-age=31536000/,
+  );
+});
+
 test("server-renders the searchable VOD archive", async () => {
   const response = await render();
   assert.equal(response.status, 200);
