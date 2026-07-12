@@ -119,6 +119,20 @@ test("server-renders VOD songs as inline playback buttons", async () => {
     html,
     /<button\b(?=[^>]*\btype="button")(?=[^>]*\bclass="[^"]*\bsong-row\b[^"]*")[^>]*>/,
   );
+  assert.match(html, /複製「第一首歌」的影片片段下載指令/);
+  assert.match(html, /指令只會輸出影片片段/);
+
+  const playButton = html.indexOf('class="song-row"');
+  const playButtonEnd = html.indexOf("</button>", playButton);
+  const commandButton = html.indexOf(
+    'class="song-command-button"',
+    playButtonEnd,
+  );
+  assert.ok(playButton >= 0 && playButtonEnd > playButton);
+  assert.ok(
+    commandButton > playButtonEnd,
+    "the command action must be a sibling, not nested inside the play button",
+  );
   assert.doesNotMatch(
     html,
     /watch\?v=abcDEF12345(?:&amp;|&)t=65s/,

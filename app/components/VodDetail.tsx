@@ -9,6 +9,7 @@ import {
   Check,
   ChevronRight,
   Clock3,
+  Copy,
   ExternalLink,
   Facebook,
   Instagram,
@@ -16,12 +17,14 @@ import {
   Play,
   Search,
   Share2,
+  Terminal,
   Twitch,
   Twitter,
   Youtube,
 } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { buildVideoDownloadCommand } from "../../lib/video-download-command";
 import type {
   VodCardData,
   VodExportManifest,
@@ -56,6 +59,32 @@ function formatDateOnly(date: string): string {
 function watchUrl(videoId: string, startSeconds?: number): string {
   const base = `https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`;
   return startSeconds === undefined ? base : `${base}&t=${startSeconds}s`;
+}
+
+async function copyText(text: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch {
+      // Fall back for browsers that expose Clipboard API but deny the write.
+    }
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.append(textarea);
+  textarea.select();
+  let copied = false;
+  try {
+    copied = document.execCommand("copy");
+  } finally {
+    textarea.remove();
+  }
+  if (!copied) throw new Error("Clipboard write failed");
 }
 
 function SocialIcon({ provider }: { provider: keyof VodExportSocialLinks }) {
@@ -109,12 +138,26 @@ export function VodDetail({
 }: VodDetailProps) {
   const [query, setQuery] = useState("");
   const [copied, setCopied] = useState(false);
+  const [commandCopyFeedback, setCommandCopyFeedback] = useState<{
+    performanceId: string;
+    status: "copied" | "error";
+  } | null>(null);
   const [playbackRequest, setPlaybackRequest] =
     useState<PlaybackRequest | null>(null);
   const [playbackStatus, setPlaybackStatus] = useState<PlaybackStatus>("idle");
   const requestSequence = useRef(0);
   const playerAnchor = useRef<HTMLDivElement>(null);
   const inlinePlayer = useRef<InlineYouTubePlayerHandle>(null);
+  const commandCopyTimer = useRef<number | null>(null);
+
+  useEffect(
+    () => () => {
+      if (commandCopyTimer.current !== null) {
+        window.clearTimeout(commandCopyTimer.current);
+      }
+    },
+    [],
+  );
 
   const songs = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase("zh-TW");
@@ -158,6 +201,33 @@ export function VodDetail({
       title: vod.title,
       startSeconds: 0,
     });
+  }
+
+  async function copyVideoCommand(
+    song: VodExportVod["performances"][number],
+  ) {
+    const command = buildVideoDownloadCommand({
+      streamerSlug: streamer.slug,
+      videoId: vod.videoId,
+      startSeconds: song.startSeconds,
+      endSeconds: song.endSeconds,
+    });
+
+    let status: "copied" | "error" = "copied";
+    try {
+      await copyText(command);
+    } catch {
+      status = "error";
+    }
+
+    setCommandCopyFeedback({ performanceId: song.performanceId, status });
+    if (commandCopyTimer.current !== null) {
+      window.clearTimeout(commandCopyTimer.current);
+    }
+    commandCopyTimer.current = window.setTimeout(
+      () => setCommandCopyFeedback(null),
+      2200,
+    );
   }
 
   return (
@@ -273,7 +343,7 @@ export function VodDetail({
             <div>
               <p className="section-kicker">Song index</p>
               <h2 id="song-index-heading">歌曲時間軸</h2>
-              <p>點選歌曲後會在上方播放器播放，並在曲目結束時間自動暫停。</p>
+              <p>點選歌曲可頁內播放；右側按鈕會複製影片片段下載指令。</p>
             </div>
             <label className="song-search">
               <Search aria-hidden="true" />
@@ -286,62 +356,107 @@ export function VodDetail({
             </label>
           </div>
 
+          <div className="song-command-note">
+            <Terminal aria-hidden="true" />
+            <span>指令只會輸出影片片段，需先安裝 yt-dlp 與 ffmpeg。</span>
+            <a
+              href="https://github.com/yt-dlp/yt-dlp/wiki/Installation"
+              target="_blank"
+              rel="noreferrer"
+            >
+              安裝說明
+              <ExternalLink aria-hidden="true" />
+            </a>
+          </div>
+
           <div className="song-list">
             {songs.map((song, index) => {
               const isActive =
                 playbackRequest?.performanceId === song.performanceId;
               const isPlaying = isActive && playbackStatus === "playing";
+              const copyFeedback =
+                commandCopyFeedback?.performanceId === song.performanceId
+                  ? commandCopyFeedback.status
+                  : null;
 
               return (
-                <button
-                  key={song.performanceId}
-                  type="button"
-                  className={`song-row${isActive ? " is-active" : ""}`}
-                  onClick={() =>
-                    playInPage({
-                      performanceId: song.performanceId,
-                      title: song.title,
-                      startSeconds: song.startSeconds,
-                      endSeconds: song.endSeconds,
-                    })
-                  }
-                  aria-current={isActive ? "true" : undefined}
-                  aria-label={`在此頁播放 ${song.title}，${formatTimestamp(song.startSeconds)} 到 ${formatTimestamp(song.endSeconds)}`}
-                >
-                  <span className="song-index-number">
-                    {String(index + 1).padStart(2, "0")}
-                  </span>
-                  <span className="song-play-icon">
-                    {isPlaying ? (
-                      <AudioLines aria-hidden="true" />
-                    ) : (
-                      <Play fill="currentColor" aria-hidden="true" />
-                    )}
-                  </span>
-                  <span className="song-copy">
-                    <strong>{song.title}</strong>
-                    <small>
-                      {isActive
-                        ? playbackStatus === "finished"
-                          ? "曲目播放完畢"
-                          : "已選取 · 在上方播放器播放"
-                        : song.originalArtist ?? "原唱資料未提供"}
-                    </small>
-                  </span>
-                  <span className="song-time">
-                    <span>
-                      <Clock3 aria-hidden="true" />
-                      {formatTimestamp(song.startSeconds)}
+                <div className="song-row-item" key={song.performanceId}>
+                  <button
+                    type="button"
+                    className={`song-row${isActive ? " is-active" : ""}`}
+                    onClick={() =>
+                      playInPage({
+                        performanceId: song.performanceId,
+                        title: song.title,
+                        startSeconds: song.startSeconds,
+                        endSeconds: song.endSeconds,
+                      })
+                    }
+                    aria-current={isActive ? "true" : undefined}
+                    aria-label={`在此頁播放 ${song.title}，${formatTimestamp(song.startSeconds)} 到 ${formatTimestamp(song.endSeconds)}`}
+                  >
+                    <span className="song-index-number">
+                      {String(index + 1).padStart(2, "0")}
                     </span>
-                    <small>
-                      {formatTimestamp(song.endSeconds - song.startSeconds)}
-                    </small>
-                  </span>
-                  <ChevronRight className="song-external" aria-hidden="true" />
-                </button>
+                    <span className="song-play-icon">
+                      {isPlaying ? (
+                        <AudioLines aria-hidden="true" />
+                      ) : (
+                        <Play fill="currentColor" aria-hidden="true" />
+                      )}
+                    </span>
+                    <span className="song-copy">
+                      <strong>{song.title}</strong>
+                      <small>
+                        {isActive
+                          ? playbackStatus === "finished"
+                            ? "曲目播放完畢"
+                            : "已選取 · 在上方播放器播放"
+                          : song.originalArtist ?? "原唱資料未提供"}
+                      </small>
+                    </span>
+                    <span className="song-time">
+                      <span>
+                        <Clock3 aria-hidden="true" />
+                        {formatTimestamp(song.startSeconds)}
+                      </span>
+                      <small>
+                        {formatTimestamp(song.endSeconds - song.startSeconds)}
+                      </small>
+                    </span>
+                    <ChevronRight className="song-external" aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    className={`song-command-button${copyFeedback === "copied" ? " is-copied" : ""}${copyFeedback === "error" ? " is-error" : ""}`}
+                    onClick={() => copyVideoCommand(song)}
+                    aria-label={`複製「${song.title}」的影片片段下載指令`}
+                    title={
+                      copyFeedback === "copied"
+                        ? "已複製影片下載指令"
+                        : copyFeedback === "error"
+                          ? "複製失敗，請再試一次"
+                          : "複製影片片段下載指令"
+                    }
+                  >
+                    {copyFeedback === "copied" ? (
+                      <Check aria-hidden="true" />
+                    ) : (
+                      <Copy aria-hidden="true" />
+                    )}
+                  </button>
+                </div>
               );
             })}
           </div>
+
+          <p className="sr-only" role="status" aria-live="polite">
+            {commandCopyFeedback?.status === "copied"
+              ? "已複製影片片段下載指令"
+              : commandCopyFeedback?.status === "error"
+                ? "下載指令複製失敗，請再試一次"
+                : ""}
+          </p>
 
           {!songs.length && (
             <div className="song-empty">
