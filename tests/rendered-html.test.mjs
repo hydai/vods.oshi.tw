@@ -99,6 +99,7 @@ test("server-renders the searchable VOD archive", async () => {
 
   const html = await response.text();
   assert.match(html, /快速找到，想再聽一次的歌/);
+  assert.match(html, /lucide-disc-3/);
   assert.match(html, /測試歌回 VOD/);
   assert.match(html, /第一首歌/);
   assert.match(html, /搜尋 VOD、VTuber、歌曲或原唱/);
