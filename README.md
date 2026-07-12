@@ -48,3 +48,9 @@ npm test
 - Prism 共用的淺色、深色設計 token
 - Zod runtime validation
 - Lucide icons
+
+## 授權
+
+程式碼以 [Apache License 2.0](LICENSE) 授權，Copyright 2026 hydai。
+
+「oshi.tw」名稱與 VODs／Prism 品牌視覺素材（含 logo、favicon 與 `public/og.png`）不在授權範圍內；依 Apache-2.0 第 6 條，本授權不授予任何商標權。
