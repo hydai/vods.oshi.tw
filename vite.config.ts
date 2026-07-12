@@ -11,9 +11,13 @@ const { d1, r2 } = hostingConfig;
 // macOS Seatbelt blocks FSEvents, so Codex previews need polling for HMR.
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
 
-const localBindingConfig = {
+const workerConfig = {
   main: "./worker/index.ts",
   compatibility_flags: ["nodejs_compat"],
+  // Production serves exclusively from the custom domain; the workers.dev
+  // fallback stays off so the site has a single canonical origin.
+  workers_dev: false,
+  routes: [{ pattern: "vods.oshi.tw", custom_domain: true }],
   d1_databases: d1
     ? [
         {
@@ -52,7 +56,7 @@ export default defineConfig(async () => {
       sites(),
       cloudflare({
         viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
-        config: localBindingConfig,
+        config: workerConfig,
       }),
     ],
   };
