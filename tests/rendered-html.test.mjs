@@ -106,7 +106,7 @@ test("server-renders the searchable VOD archive", async () => {
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton/);
 });
 
-test("server-renders a VOD detail with timestamped songs", async () => {
+test("server-renders VOD songs as inline playback buttons", async () => {
   const response = await render("/vod/tester/abcDEF12345");
   assert.equal(response.status, 200);
 
@@ -115,7 +115,54 @@ test("server-renders a VOD detail with timestamped songs", async () => {
   assert.match(html, /測試歌姬/);
   assert.match(html, /歌曲時間軸/);
   assert.match(html, /第一首歌/);
-  assert.match(html, /watch\?v=abcDEF12345(?:&amp;|&)t=65s/);
+  assert.match(
+    html,
+    /<button\b(?=[^>]*\btype="button")(?=[^>]*\bclass="[^"]*\bsong-row\b[^"]*")[^>]*>/,
+  );
+  assert.doesNotMatch(
+    html,
+    /watch\?v=abcDEF12345(?:&amp;|&)t=65s/,
+    "song rows must not navigate to timestamped YouTube watch pages",
+  );
+});
+
+test("inline YouTube player bounds playback and cleans up resources", async () => {
+  const source = await readFile(
+    new URL("../app/components/InlineYouTubePlayer.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(
+    source,
+    /loadVideoById\s*\(\s*\{[\s\S]*?startSeconds\s*:[\s\S]*?endSeconds\s*:/,
+    "segments must pass absolute start and end times through loadVideoById object syntax",
+  );
+  assert.match(
+    source,
+    /getCurrentTime\s*\(\s*\)/,
+    "a current-time watchdog must guard the segment boundary",
+  );
+  assert.match(
+    source,
+    /pauseVideo\s*\(\s*\)/,
+    "the watchdog must pause playback at the selected song's end",
+  );
+  assert.match(source, /(?:window\.)?setInterval\s*\(/);
+  assert.match(
+    source,
+    /(?:window\.)?clearInterval\s*\(/,
+    "the end watchdog interval must be cleared",
+  );
+  assert.match(
+    source,
+    /\.destroy\s*\(\s*\)/,
+    "the YouTube player must be destroyed when its component unmounts",
+  );
+  assert.match(
+    source,
+    /onAutoplayBlocked\s*:/,
+    "blocked autoplay must be surfaced instead of silently appearing to play",
+  );
 });
 
 test("removes the disposable starter preview", async () => {

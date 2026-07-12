@@ -1166,10 +1166,180 @@ a {
 .hero-video {
   position: relative;
   display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 0;
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface);
+  padding: 0;
+  color: inherit;
+}
+
+.hero-player-anchor {
+  min-width: 0;
+  scroll-margin-top: 96px;
+}
+
+.inline-player {
+  min-width: 0;
+}
+
+.inline-player-frame {
+  position: relative;
   aspect-ratio: 16 / 9;
   overflow: hidden;
   border-radius: var(--radius-xl);
-  background: var(--bg-surface);
+  background: #0f172a;
+}
+
+.inline-player-mount,
+.inline-player-mount iframe {
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+  border: 0;
+}
+
+.inline-player-poster {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  aspect-ratio: auto;
+  border-radius: 0;
+}
+
+.inline-player-recovery {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 7px;
+  background: rgba(15, 23, 42, 0.88);
+  padding: 24px;
+  color: white;
+  text-align: center;
+  backdrop-filter: blur(10px);
+}
+
+.inline-player-recovery > svg {
+  width: 25px;
+  height: 25px;
+  margin-bottom: 3px;
+  color: #f9a8d4;
+}
+
+.inline-player-recovery strong {
+  font-size: 14px;
+}
+
+.inline-player-recovery > span {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 11px;
+}
+
+.inline-player-recovery > div {
+  display: flex;
+  gap: 8px;
+  margin-top: 7px;
+}
+
+.inline-player-recovery button,
+.inline-player-recovery a {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: var(--radius-pill);
+  background: rgba(255, 255, 255, 0.12);
+  padding: 7px 13px;
+  color: white;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.inline-player-recovery button svg,
+.inline-player-recovery a svg {
+  width: 14px;
+  height: 14px;
+}
+
+.inline-player-caption {
+  display: flex;
+  min-height: 46px;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--border-glass);
+  border-top: 0;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  background: var(--bg-surface-muted);
+  padding: 8px 13px;
+}
+
+.inline-player-caption > span:last-child {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.inline-player-caption strong,
+.inline-player-caption small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inline-player-caption strong {
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.inline-player-caption small {
+  color: var(--text-secondary);
+  font-size: 9px;
+}
+
+.player-status-dot {
+  width: 8px;
+  height: 8px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--text-muted);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--text-muted) 18%, transparent);
+}
+
+.player-status-dot.is-playing {
+  background: var(--accent-pink);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent-pink) 18%, transparent);
+}
+
+.player-status-dot.is-loading {
+  background: var(--accent-blue);
+}
+
+.player-status-dot.is-finished {
+  background: var(--accent-purple);
+}
+
+.player-status-dot.is-error,
+.player-status-dot.is-blocked {
+  background: #f59e0b;
+}
+
+.spin {
+  animation: player-spin 900ms linear infinite;
+}
+
+@keyframes player-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .hero-video > img {
@@ -1291,11 +1461,16 @@ a {
 
 .vod-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 9px;
   margin-top: 25px;
 }
 
 .vod-actions .primary-button {
+  flex: 1 0 100%;
+}
+
+.vod-actions .secondary-button {
   flex: 1;
 }
 
@@ -1381,6 +1556,7 @@ a {
 
 .song-row {
   display: grid;
+  width: 100%;
   min-width: 0;
   min-height: 72px;
   grid-template-columns: 28px 34px minmax(0, 1fr) auto 16px;
@@ -1391,7 +1567,20 @@ a {
   background: var(--bg-surface-frosted);
   padding: 10px 13px;
   box-shadow: var(--shadow-small);
+  color: inherit;
+  text-align: left;
   transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+.song-row.is-active {
+  border-color: var(--border-accent-pink);
+  background: var(--bg-accent-pink-muted);
+  box-shadow: 0 8px 24px rgba(244, 114, 182, 0.12);
+}
+
+.song-row.is-active .song-play-icon {
+  background: var(--gradient-brand);
+  color: white;
 }
 
 .song-index-number {
@@ -1771,6 +1960,10 @@ a {
     border-color: var(--border-accent-pink);
     background: var(--bg-accent-pink);
     transform: translateY(-1px);
+  }
+
+  .song-row.is-active:hover {
+    background: var(--bg-accent-pink-muted);
   }
 
   .related-card:hover {

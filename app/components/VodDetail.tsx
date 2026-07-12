@@ -3,6 +3,7 @@
 /* eslint-disable @next/next/no-img-element -- YouTube thumbnail URLs are derived from validated video IDs. */
 
 import {
+  AudioLines,
   ArrowLeft,
   CalendarDays,
   Check,
@@ -20,7 +21,7 @@ import {
   Youtube,
 } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type {
   VodCardData,
   VodExportManifest,
@@ -30,6 +31,12 @@ import type {
 } from "../../lib/vod-types";
 import { Avatar } from "./Avatar";
 import { Brand } from "./Brand";
+import {
+  InlineYouTubePlayer,
+  type InlineYouTubePlayerHandle,
+  type PlaybackRequest,
+  type PlaybackStatus,
+} from "./InlineYouTubePlayer";
 import { ThemeToggle } from "./ThemeToggle";
 
 function formatTimestamp(seconds: number): string {
@@ -102,6 +109,12 @@ export function VodDetail({
 }: VodDetailProps) {
   const [query, setQuery] = useState("");
   const [copied, setCopied] = useState(false);
+  const [playbackRequest, setPlaybackRequest] =
+    useState<PlaybackRequest | null>(null);
+  const [playbackStatus, setPlaybackStatus] = useState<PlaybackStatus>("idle");
+  const requestSequence = useRef(0);
+  const playerAnchor = useRef<HTMLDivElement>(null);
+  const inlinePlayer = useRef<InlineYouTubePlayerHandle>(null);
 
   const songs = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase("zh-TW");
@@ -122,6 +135,29 @@ export function VodDetail({
     await navigator.clipboard.writeText(data.url);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1800);
+  }
+
+  function playInPage(request: Omit<PlaybackRequest, "requestId">) {
+    requestSequence.current += 1;
+    const nextRequest = { ...request, requestId: requestSequence.current };
+    setPlaybackStatus("loading");
+    setPlaybackRequest(nextRequest);
+    inlinePlayer.current?.play(nextRequest);
+
+    window.requestAnimationFrame(() => {
+      playerAnchor.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    });
+  }
+
+  function playFullVod() {
+    playInPage({
+      performanceId: null,
+      title: vod.title,
+      startSeconds: 0,
+    });
   }
 
   return (
@@ -147,26 +183,17 @@ export function VodDetail({
         </nav>
 
         <section className="vod-hero">
-          <a
-            className="hero-video"
-            href={watchUrl(vod.videoId)}
-            target="_blank"
-            rel="noreferrer"
-            aria-label="在 YouTube 觀看完整 VOD"
-          >
-            <img
-              src={`https://i.ytimg.com/vi/${encodeURIComponent(vod.videoId)}/hqdefault.jpg`}
-              alt={`${vod.title} 的 YouTube 縮圖`}
-              referrerPolicy="no-referrer"
+          <div className="hero-player-anchor" ref={playerAnchor}>
+            <InlineYouTubePlayer
+              ref={inlinePlayer}
+              videoId={vod.videoId}
+              title={vod.title}
+              thumbnailUrl={`https://i.ytimg.com/vi/${encodeURIComponent(vod.videoId)}/hqdefault.jpg`}
+              request={playbackRequest}
+              onRequestFullVod={playFullVod}
+              onStatusChange={setPlaybackStatus}
             />
-            <span className="hero-video-scrim" />
-            <span className="hero-play">
-              <Play fill="currentColor" aria-hidden="true" />
-            </span>
-            <span className="hero-source">
-              <Youtube aria-hidden="true" /> 在 YouTube 觀看
-            </span>
-          </a>
+          </div>
 
           <div className="vod-hero-copy">
             <div className="creator-block">
@@ -196,14 +223,24 @@ export function VodDetail({
             </div>
 
             <div className="vod-actions">
+              <button
+                type="button"
+                className="primary-button"
+                onClick={playFullVod}
+              >
+                <Play fill="currentColor" aria-hidden="true" />
+                {playbackRequest?.performanceId === null
+                  ? "重新播放完整 VOD"
+                  : "在此頁播放完整 VOD"}
+              </button>
               <a
                 href={watchUrl(vod.videoId)}
                 target="_blank"
                 rel="noreferrer"
-                className="primary-button"
+                className="secondary-button"
               >
                 <Youtube aria-hidden="true" />
-                播放完整 VOD
+                YouTube
                 <ExternalLink aria-hidden="true" />
               </a>
               <button type="button" className="secondary-button icon-copy" onClick={share}>
@@ -236,7 +273,7 @@ export function VodDetail({
             <div>
               <p className="section-kicker">Song index</p>
               <h2 id="song-index-heading">歌曲時間軸</h2>
-              <p>點選歌曲，直接從對應時間開始播放。</p>
+              <p>點選歌曲後會在上方播放器播放，並在曲目結束時間自動暫停。</p>
             </div>
             <label className="song-search">
               <Search aria-hidden="true" />
@@ -250,32 +287,60 @@ export function VodDetail({
           </div>
 
           <div className="song-list">
-            {songs.map((song, index) => (
-              <a
-                key={song.performanceId}
-                className="song-row"
-                href={watchUrl(vod.videoId, song.startSeconds)}
-                target="_blank"
-                rel="noreferrer"
-              >
-                <span className="song-index-number">{String(index + 1).padStart(2, "0")}</span>
-                <span className="song-play-icon">
-                  <Play fill="currentColor" aria-hidden="true" />
-                </span>
-                <span className="song-copy">
-                  <strong>{song.title}</strong>
-                  <small>{song.originalArtist ?? "原唱資料未提供"}</small>
-                </span>
-                <span className="song-time">
-                  <span>
-                    <Clock3 aria-hidden="true" />
-                    {formatTimestamp(song.startSeconds)}
+            {songs.map((song, index) => {
+              const isActive =
+                playbackRequest?.performanceId === song.performanceId;
+              const isPlaying = isActive && playbackStatus === "playing";
+
+              return (
+                <button
+                  key={song.performanceId}
+                  type="button"
+                  className={`song-row${isActive ? " is-active" : ""}`}
+                  onClick={() =>
+                    playInPage({
+                      performanceId: song.performanceId,
+                      title: song.title,
+                      startSeconds: song.startSeconds,
+                      endSeconds: song.endSeconds,
+                    })
+                  }
+                  aria-current={isActive ? "true" : undefined}
+                  aria-label={`在此頁播放 ${song.title}，${formatTimestamp(song.startSeconds)} 到 ${formatTimestamp(song.endSeconds)}`}
+                >
+                  <span className="song-index-number">
+                    {String(index + 1).padStart(2, "0")}
                   </span>
-                  <small>{formatTimestamp(song.endSeconds - song.startSeconds)}</small>
-                </span>
-                <ExternalLink className="song-external" aria-hidden="true" />
-              </a>
-            ))}
+                  <span className="song-play-icon">
+                    {isPlaying ? (
+                      <AudioLines aria-hidden="true" />
+                    ) : (
+                      <Play fill="currentColor" aria-hidden="true" />
+                    )}
+                  </span>
+                  <span className="song-copy">
+                    <strong>{song.title}</strong>
+                    <small>
+                      {isActive
+                        ? playbackStatus === "finished"
+                          ? "曲目播放完畢"
+                          : "已選取 · 在上方播放器播放"
+                        : song.originalArtist ?? "原唱資料未提供"}
+                    </small>
+                  </span>
+                  <span className="song-time">
+                    <span>
+                      <Clock3 aria-hidden="true" />
+                      {formatTimestamp(song.startSeconds)}
+                    </span>
+                    <small>
+                      {formatTimestamp(song.endSeconds - song.startSeconds)}
+                    </small>
+                  </span>
+                  <ChevronRight className="song-external" aria-hidden="true" />
+                </button>
+              );
+            })}
           </div>
 
           {!songs.length && (
