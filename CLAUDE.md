@@ -9,6 +9,16 @@ no browser CORS by design — never move data fetching to the client.
 Production = worker `vods-oshi-tw` at https://vods.oshi.tw
 (custom domain; workers.dev disabled).
 
+Normal flow — Workers Builds (Cloudflare git integration): pushing to `main`
+auto-builds (`npm run build`) and deploys
+(`npx wrangler deploy -c dist/server/wrangler.json`); non-main pushes only
+upload a preview version. Run `npm run lint && npm test` before pushing.
+Build status lives in the worker's Builds tab; CI Node version is pinned in
+`.node-version`.
+
+Manual fallback (only when Workers Builds is unavailable — don't race a
+running build):
+
 1. Gate: `npm run lint && npm test` — `npm test` runs the build, which
    regenerates `dist/server/wrangler.json`.
 2. Deploy: `npx wrangler deploy -c dist/server/wrangler.json`
