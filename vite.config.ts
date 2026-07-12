@@ -18,6 +18,16 @@ const workerConfig = {
   // fallback stays off so the site has a single canonical origin.
   workers_dev: false,
   routes: [{ pattern: "vods.oshi.tw", custom_domain: true }],
+  // Workers Logs on (with invocation logs); traces off.
+  observability: {
+    logs: {
+      enabled: true,
+      invocation_logs: true,
+    },
+    traces: {
+      enabled: false,
+    },
+  },
   d1_databases: d1
     ? [
         {
