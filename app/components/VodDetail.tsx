@@ -34,6 +34,7 @@ import type {
 } from "../../lib/vod-types";
 import { Avatar } from "./Avatar";
 import { Brand } from "./Brand";
+import { DownloadSettings, useDownloadSettings } from "./DownloadSettings";
 import {
   InlineYouTubePlayer,
   type InlineYouTubePlayerHandle,
@@ -149,6 +150,12 @@ export function VodDetail({
   const playerAnchor = useRef<HTMLDivElement>(null);
   const inlinePlayer = useRef<InlineYouTubePlayerHandle>(null);
   const commandCopyTimer = useRef<number | null>(null);
+  const {
+    settings: downloadSettings,
+    detectedPlatform,
+    resolvedPlatform,
+    updateSettings: updateDownloadSettings,
+  } = useDownloadSettings();
 
   useEffect(
     () => () => {
@@ -211,6 +218,8 @@ export function VodDetail({
       videoId: vod.videoId,
       startSeconds: song.startSeconds,
       endSeconds: song.endSeconds,
+      profile: downloadSettings.profile,
+      platform: resolvedPlatform,
     });
 
     let status: "copied" | "error" = "copied";
@@ -240,6 +249,12 @@ export function VodDetail({
               <ArrowLeft aria-hidden="true" />
               <span>回到封存庫</span>
             </Link>
+            <DownloadSettings
+              settings={downloadSettings}
+              detectedPlatform={detectedPlatform}
+              resolvedPlatform={resolvedPlatform}
+              onChange={updateDownloadSettings}
+            />
             <ThemeToggle />
           </div>
         </div>
@@ -359,8 +374,12 @@ export function VodDetail({
           <div className="song-command-note">
             <Terminal aria-hidden="true" />
             <span>
-              指令只會輸出影片片段並採快速切片；需先安裝 yt-dlp 與
-              ffmpeg，切點可能受關鍵影格影響。
+              {downloadSettings.profile === "editing-mp4"
+                ? "目前複製剪輯相容的 MP4 快速切片；切點可能受關鍵影格影響。"
+                : downloadSettings.profile === "quality-webm"
+                  ? "目前複製高畫質 WebM 快速切片；切點可能受關鍵影格影響。"
+                  : "目前複製較精準切點的重新編碼指令；執行較慢，並會增加耗電與發熱。"}
+              需先安裝 yt-dlp 與 ffmpeg。
             </span>
             <a
               href="https://github.com/yt-dlp/yt-dlp/wiki/Installation"

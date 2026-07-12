@@ -120,8 +120,11 @@ test("server-renders VOD songs as inline playback buttons", async () => {
     /<button\b(?=[^>]*\btype="button")(?=[^>]*\bclass="[^"]*\bsong-row\b[^"]*")[^>]*>/,
   );
   assert.match(html, /複製「第一首歌」的影片片段下載指令/);
-  assert.match(html, /指令只會輸出影片片段/);
-  assert.match(html, /採快速切片/);
+  assert.match(html, /下載指令設定/);
+  assert.match(html, /剪輯相容 MP4/);
+  assert.match(html, /高畫質 WebM/);
+  assert.match(html, /較精準切點/);
+  assert.match(html, /目前複製剪輯相容的 MP4 快速切片/);
 
   const playButton = html.indexOf('class="song-row"');
   const playButtonEnd = html.indexOf("</button>", playButton);

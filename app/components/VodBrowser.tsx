@@ -22,6 +22,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { VodCardData, VodExportCounts } from "../../lib/vod-types";
 import { Avatar } from "./Avatar";
 import { Brand } from "./Brand";
+import { DownloadSettings, useDownloadSettings } from "./DownloadSettings";
 import { ThemeToggle } from "./ThemeToggle";
 
 const PAGE_SIZE = 24;
@@ -145,6 +146,12 @@ export function VodBrowser({
   const [year, setYear] = useState(initialFilters.year);
   const [sort, setSort] = useState<SortMode>(initialFilters.sort);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const {
+    settings: downloadSettings,
+    detectedPlatform,
+    resolvedPlatform,
+    updateSettings: updateDownloadSettings,
+  } = useDownloadSettings();
 
   const years = useMemo(
     () => Array.from(new Set(cards.map((card) => card.date.slice(0, 4)))).sort().reverse(),
@@ -225,7 +232,16 @@ export function VodBrowser({
       <aside className="desktop-sidebar">
         <div className="sidebar-brand-row">
           <Brand />
-          <ThemeToggle />
+          <div className="site-control-group">
+            <DownloadSettings
+              settings={downloadSettings}
+              detectedPlatform={detectedPlatform}
+              resolvedPlatform={resolvedPlatform}
+              onChange={updateDownloadSettings}
+              placement="left"
+            />
+            <ThemeToggle />
+          </div>
         </div>
 
         <div className="sidebar-section">
@@ -270,7 +286,15 @@ export function VodBrowser({
 
       <div className="mobile-header">
         <Brand compact />
-        <ThemeToggle />
+        <div className="site-control-group">
+          <DownloadSettings
+            settings={downloadSettings}
+            detectedPlatform={detectedPlatform}
+            resolvedPlatform={resolvedPlatform}
+            onChange={updateDownloadSettings}
+          />
+          <ThemeToggle />
+        </div>
       </div>
 
       <main className="browser-main">

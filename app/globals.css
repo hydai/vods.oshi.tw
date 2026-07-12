@@ -251,6 +251,243 @@ a {
   height: 16px;
 }
 
+.site-control-group {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.download-settings-control {
+  display: flex;
+}
+
+.download-settings-trigger {
+  position: relative;
+}
+
+.download-settings-trigger.has-custom-settings::after {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 6px;
+  height: 6px;
+  border: 1px solid var(--bg-surface);
+  border-radius: 50%;
+  background: var(--accent-pink);
+  content: "";
+}
+
+.download-settings-popover {
+  position: fixed;
+  inset: calc(78px + var(--safe-area-top))
+    max(14px, calc((100vw - 1320px) / 2)) auto auto;
+  width: min(390px, calc(100vw - 28px));
+  max-height: calc(100dvh - 94px - var(--safe-area-top));
+  overflow: auto;
+  margin: 0;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-2xl);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-panel);
+  color: var(--text-primary);
+  padding: 0;
+  overscroll-behavior: contain;
+}
+
+.download-settings-control.is-left .download-settings-popover {
+  right: auto;
+  left: 14px;
+}
+
+.download-settings-popover::backdrop {
+  background: transparent;
+}
+
+.download-settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border-bottom: 1px solid var(--border-default);
+  padding: 18px 18px 15px;
+}
+
+.download-settings-header p {
+  margin: 0 0 3px;
+  color: var(--accent-pink-dark);
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.download-settings-header h2 {
+  margin: 0;
+  font-size: 19px;
+  letter-spacing: -0.025em;
+}
+
+.download-settings-close {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--border-default);
+  border-radius: 50%;
+  background: var(--bg-surface-muted);
+  color: var(--text-secondary);
+}
+
+.download-settings-close svg {
+  width: 15px;
+  height: 15px;
+}
+
+.download-settings-fieldset {
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  padding: 17px 18px 0;
+}
+
+.download-settings-fieldset legend {
+  padding: 0;
+  color: var(--text-secondary);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+
+.download-profile-options {
+  display: grid;
+  gap: 8px;
+  margin-top: 9px;
+}
+
+.download-profile-option {
+  display: grid;
+  min-height: 86px;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-surface-muted);
+  padding: 12px;
+  cursor: pointer;
+  transition: border-color 160ms ease, background 160ms ease,
+    transform 160ms ease;
+}
+
+.download-profile-option.is-selected {
+  border-color: var(--border-accent-pink);
+  background: var(--bg-accent-pink);
+}
+
+.download-profile-option input {
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  accent-color: var(--accent-pink-dark);
+}
+
+.download-profile-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.download-profile-copy > span:first-child {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.download-profile-copy strong {
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.download-profile-copy em {
+  border-radius: var(--radius-pill);
+  background: var(--gradient-brand);
+  padding: 2px 7px;
+  color: white;
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.download-profile-copy small {
+  margin-top: 2px;
+  color: var(--accent-blue);
+  font-size: 9px;
+  font-weight: 750;
+}
+
+.download-profile-copy > span:last-child {
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.platform-fieldset {
+  padding-top: 19px;
+}
+
+.download-platform-select {
+  display: block;
+  margin-top: 9px;
+}
+
+.download-platform-select select {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface-muted);
+  padding: 0 12px;
+  outline: 0;
+}
+
+.platform-fieldset > p {
+  margin: 7px 2px 0;
+  color: var(--text-secondary);
+  font-size: 9px;
+}
+
+.platform-fieldset > p.is-unknown {
+  color: var(--accent-pink-dark);
+}
+
+.download-settings-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin-top: 18px;
+  border-top: 1px solid var(--border-default);
+  padding: 14px 18px 17px;
+}
+
+.download-settings-footer span {
+  color: var(--text-tertiary);
+  font-size: 9px;
+}
+
+.download-settings-footer button {
+  min-height: 38px;
+  border: 1px solid rgba(255, 255, 255, 0.36);
+  border-radius: var(--radius-pill);
+  background: var(--gradient-brand);
+  padding: 8px 19px;
+  color: white;
+  font-size: 11px;
+  font-weight: 800;
+}
+
 .primary-button,
 .secondary-button {
   display: inline-flex;
@@ -1987,6 +2224,11 @@ a {
     transform: translateY(-1px);
   }
 
+  .download-profile-option:hover {
+    border-color: var(--border-accent-blue);
+    transform: translateY(-1px);
+  }
+
   .sidebar-nav:not(.active):hover,
   .sidebar-links a:hover {
     background: var(--bg-surface-muted);
@@ -2217,6 +2459,18 @@ a {
   .detail-header-inner {
     min-height: calc(60px + var(--safe-area-top));
     padding-top: var(--safe-area-top);
+  }
+
+  .detail-header-actions,
+  .site-control-group {
+    gap: 7px;
+  }
+
+  .download-settings-popover,
+  .download-settings-control.is-left .download-settings-popover {
+    inset: calc(68px + var(--safe-area-top)) 14px auto 14px;
+    width: auto;
+    max-height: calc(100dvh - 82px - var(--safe-area-top));
   }
 
   .detail-header .brand-copy small {
