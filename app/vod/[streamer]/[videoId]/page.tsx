@@ -30,9 +30,11 @@ export default async function VodPage({ params }: VodPageProps) {
     )
     .slice(0, 4);
 
+  const { slug, displayName, youtubeChannelId, avatarUrl, group, socialLinks } = result.streamer;
+
   return (
     <VodDetail
-      streamer={result.streamer}
+      streamer={{ slug, displayName, youtubeChannelId, avatarUrl, group, socialLinks }}
       vod={result.vod}
       manifest={result.dataset.manifest}
       relatedVods={relatedVods}

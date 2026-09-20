@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { getRequestExecutionContext } from "vinext/shims/request-context";
 import type {
   VodCardData,
   VodDataset,
@@ -16,6 +17,8 @@ const MAX_MANIFEST_BYTES = 65_536;
 const MAX_SNAPSHOT_BYTES = 10_485_760;
 const REFRESH_INTERVAL_MS = 60_000;
 const FAILED_REFRESH_RETRY_MS = 15_000;
+const DOWNLOAD_TIMEOUT_MS = 10_000;
+const MAX_PUBLISHED_AT_CLOCK_SKEW_MS = 5 * 60_000;
 
 const V1_VERSION = /^1\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/;
 const SHA256 = /^[0-9a-f]{64}$/;
@@ -50,21 +53,23 @@ const manifestSchema = z
     schemaVersion: z.string().regex(V1_VERSION),
     snapshotUrl: z.string().url(),
     sha256: z.string().regex(SHA256),
-    publishedAt: z.string().regex(UTC_MILLISECONDS),
+    publishedAt: z.string().regex(UTC_MILLISECONDS).refine((value) => {
+      const date = new Date(value);
+      return Number.isFinite(date.getTime()) && date.toISOString() === value;
+    }, "Expected a valid canonical UTC timestamp"),
     uncompressedBytes: safeInteger.min(1).max(MAX_SNAPSHOT_BYTES),
     counts: countsSchema,
   })
   .passthrough();
 
-const socialLinksSchema = z
-  .object({
-    youtube: httpsUrl.optional(),
-    twitter: httpsUrl.optional(),
-    facebook: httpsUrl.optional(),
-    instagram: httpsUrl.optional(),
-    twitch: httpsUrl.optional(),
-  })
-  .passthrough();
+// Unknown providers are forward-compatible data, not renderable links.
+const socialLinksSchema = z.object({
+  youtube: httpsUrl.optional(),
+  twitter: httpsUrl.optional(),
+  facebook: httpsUrl.optional(),
+  instagram: httpsUrl.optional(),
+  twitch: httpsUrl.optional(),
+});
 
 const performanceSchema = z
   .object({
@@ -120,9 +125,6 @@ const avatarHosts = new Set([
   "lh3.googleusercontent.com",
 ]);
 
-let activeDataset: VodDataset | null = null;
-let nextRefreshAt = 0;
-
 function parseJson(bytes: Uint8Array, label: string): unknown {
   if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
     throw new Error(`${label} contains a forbidden UTF-8 BOM`);
@@ -157,33 +159,46 @@ function assertJsonResponse(
 async function readBytesWithLimit(
   response: Response,
   limit: number,
+  signal: AbortSignal,
 ): Promise<Uint8Array> {
   if (!response.body) throw new Error("Response body is missing");
 
   const reader = response.body.getReader();
+  const cancel = () => {
+    void reader.cancel(signal.reason).catch(() => {});
+  };
+  signal.addEventListener("abort", cancel, { once: true });
+  if (signal.aborted) cancel();
   const chunks: Uint8Array[] = [];
   let total = 0;
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    if (!value) continue;
+  try {
+    while (true) {
+      signal.throwIfAborted();
+      const { done, value } = await reader.read();
+      signal.throwIfAborted();
+      if (done) break;
+      if (!value) continue;
 
-    total += value.byteLength;
-    if (total > limit) {
-      await reader.cancel();
-      throw new Error(`Response exceeds ${limit} decoded bytes`);
+      total += value.byteLength;
+      if (total > limit) {
+        await reader.cancel();
+        throw new Error(`Response exceeds ${limit} decoded bytes`);
+      }
+      chunks.push(value);
     }
-    chunks.push(value);
-  }
 
-  const bytes = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
+    const bytes = new Uint8Array(total);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+    return bytes;
+  } finally {
+    signal.removeEventListener("abort", cancel);
+    reader.releaseLock();
   }
-  return bytes;
 }
 
 async function sha256Hex(bytes: Uint8Array): Promise<string> {
@@ -409,8 +424,12 @@ function validateSnapshotSemantics(
   assertCounts(snapshotCounts(snapshot), manifest.counts);
 }
 
-function parseManifest(raw: unknown): VodExportManifest {
+function parseManifest(raw: unknown, now: number): VodExportManifest {
   const manifest = manifestSchema.parse(raw) as VodExportManifest;
+  // A future publication must not poison the monotonic rollback guard.
+  if (Date.parse(manifest.publishedAt) > now + MAX_PUBLISHED_AT_CLOCK_SKEW_MS) {
+    throw new Error("Manifest publishedAt is too far in the future");
+  }
   const expectedSnapshotUrl = `${TRUSTED_SNAPSHOT_ORIGIN}/vod/v1/snapshots/${manifest.sha256}.json`;
   if (manifest.snapshotUrl !== expectedSnapshotUrl) {
     throw new Error("Manifest contains an unexpected snapshot URL");
@@ -418,31 +437,48 @@ function parseManifest(raw: unknown): VodExportManifest {
   return manifest;
 }
 
-async function refreshDataset(): Promise<VodDataset> {
-  const manifestResponse = await fetch(MANIFEST_URL, {
+async function refreshDataset(
+  previous: VodDataset | null,
+  fetcher: typeof fetch,
+  signal: AbortSignal,
+  now: () => number,
+): Promise<VodDataset> {
+  const manifestResponse = await fetcher(MANIFEST_URL, {
     redirect: "manual",
     headers: { accept: "application/json" },
+    signal,
   });
   assertJsonResponse(manifestResponse, "Manifest", MANIFEST_URL);
   const manifestBytes = await readBytesWithLimit(
     manifestResponse,
     MAX_MANIFEST_BYTES,
+    signal,
   );
-  const manifest = parseManifest(parseJson(manifestBytes, "Manifest"));
+  const manifest = parseManifest(parseJson(manifestBytes, "Manifest"), now());
 
-  if (activeDataset?.manifest.sha256 === manifest.sha256) {
-    nextRefreshAt = Date.now() + REFRESH_INTERVAL_MS;
-    return activeDataset;
+  if (previous?.manifest.sha256 === manifest.sha256) {
+    assertCounts(manifest.counts, previous.manifest.counts);
+    if (
+      manifest.schemaVersion !== previous.snapshot.schemaVersion ||
+      manifest.uncompressedBytes !== previous.manifest.uncompressedBytes
+    ) {
+      throw new Error("Manifest metadata changed for the same snapshot");
+    }
+    return previous.manifest.publishedAt > manifest.publishedAt
+      ? previous
+      : { manifest, snapshot: previous.snapshot };
   }
 
-  const snapshotResponse = await fetch(manifest.snapshotUrl, {
+  const snapshotResponse = await fetcher(manifest.snapshotUrl, {
     redirect: "manual",
     headers: { accept: "application/json" },
+    signal,
   });
   assertJsonResponse(snapshotResponse, "Snapshot", manifest.snapshotUrl);
   const snapshotBytes = await readBytesWithLimit(
     snapshotResponse,
     MAX_SNAPSHOT_BYTES,
+    signal,
   );
   if (snapshotBytes.byteLength !== manifest.uncompressedBytes) {
     throw new Error("Snapshot byte length does not match the manifest");
@@ -456,35 +492,88 @@ async function refreshDataset(): Promise<VodDataset> {
   validateSnapshotSemantics(rawSnapshot, snapshot, manifest);
 
   if (
-    activeDataset &&
-    activeDataset.manifest.publishedAt > manifest.publishedAt
+    previous &&
+    previous.manifest.publishedAt > manifest.publishedAt
   ) {
-    nextRefreshAt = Date.now() + REFRESH_INTERVAL_MS;
-    return activeDataset;
+    return previous;
   }
 
-  const candidate = { manifest, snapshot } satisfies VodDataset;
-  activeDataset = candidate;
-  nextRefreshAt = Date.now() + REFRESH_INTERVAL_MS;
-  return candidate;
+  return { manifest, snapshot } satisfies VodDataset;
 }
 
-export async function getVodDataset(): Promise<VodDataset> {
-  if (activeDataset && Date.now() < nextRefreshAt) return activeDataset;
+type KeepAlive = (task: Promise<unknown>) => void;
 
-  try {
-    return await refreshDataset();
-  } catch (error) {
-    nextRefreshAt = Date.now() + FAILED_REFRESH_RETRY_MS;
-    if (activeDataset) {
-      console.error("VOD dataset refresh failed; keeping last known good data", error);
-      return activeDataset;
+// Each load owns and fully consumes its I/O. Only validated plain data crosses
+// requests; the initiating request keeps the load alive even after disconnect.
+export function createVodDatasetLoader({
+  fetcher = (...args: Parameters<typeof fetch>) => fetch(...args),
+  now = () => Date.now(),
+  timeoutMs = DOWNLOAD_TIMEOUT_MS,
+}: {
+  fetcher?: typeof fetch;
+  now?: () => number;
+  timeoutMs?: number;
+} = {}) {
+  let activeDataset: VodDataset | null = null;
+  let activeRefresh: Promise<VodDataset> | null = null;
+  let nextRefreshAt = 0;
+  let lastFailure: unknown;
+
+  return async function load(keepAlive?: KeepAlive): Promise<VodDataset> {
+    if (now() < nextRefreshAt) {
+      if (activeDataset) return activeDataset;
+      throw lastFailure;
     }
-    throw error;
-  }
+
+    if (!activeRefresh) {
+      const controller = new AbortController();
+      const timeout = setTimeout(
+        () => controller.abort(new Error("VOD dataset download timed out")),
+        timeoutMs,
+      );
+      activeRefresh = refreshDataset(activeDataset, fetcher, controller.signal, now)
+        .then((dataset) => {
+          activeDataset = dataset;
+          nextRefreshAt = now() + REFRESH_INTERVAL_MS;
+          lastFailure = undefined;
+          return dataset;
+        })
+        .catch((error: unknown) => {
+          lastFailure = error;
+          nextRefreshAt = now() + FAILED_REFRESH_RETRY_MS;
+          if (!activeDataset) throw error;
+          console.error("VOD dataset refresh failed; keeping last known good data", error);
+          return activeDataset;
+        })
+        .finally(() => {
+          clearTimeout(timeout);
+          // Header validation may fail before a response body is consumed.
+          controller.abort();
+          activeRefresh = null;
+        });
+      // Register with the I/O owner's context, not a later waiting request.
+      keepAlive?.(activeRefresh.catch(() => {}));
+    }
+
+    // Without an execution context (standalone Node), await the refresh so no
+    // asynchronous work is abandoned when the caller finishes.
+    if (activeDataset && keepAlive) return activeDataset;
+    return activeRefresh;
+  };
 }
+
+const loadVodDataset = createVodDatasetLoader();
+
+export function getVodDataset(): Promise<VodDataset> {
+  const context = getRequestExecutionContext();
+  return loadVodDataset(context ? (task) => context.waitUntil(task) : undefined);
+}
+
+const cardCache = new WeakMap<VodExportSnapshot, VodCardData[]>();
 
 export function makeVodCards(dataset: VodDataset): VodCardData[] {
+  const cached = cardCache.get(dataset.snapshot);
+  if (cached) return cached;
   const cards = dataset.snapshot.streamers.flatMap((streamer) =>
     streamer.vods.map((vod) => ({
       id: `${streamer.slug}:${vod.videoId}`,
@@ -511,11 +600,13 @@ export function makeVodCards(dataset: VodDataset): VodCardData[] {
     })),
   );
 
-  return cards.sort(
+  cards.sort(
     (left, right) =>
       right.date.localeCompare(left.date) ||
       utf8Compare(left.id, right.id),
   );
+  cardCache.set(dataset.snapshot, cards);
+  return cards;
 }
 
 export async function getVodByKey(

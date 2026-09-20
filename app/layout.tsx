@@ -2,25 +2,8 @@ import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import "./globals.css";
 
-function safeRequestOrigin(host: string | null, protocol: string | null): URL {
-  const fallback = new URL("https://vods.oshi.tw");
-  if (!host || !/^[a-z0-9.-]+(?::\d+)?$/i.test(host)) return fallback;
-  try {
-    const candidate = new URL(`${protocol === "http" ? "http" : "https"}://${host}`);
-    return candidate.username || candidate.password ? fallback : candidate;
-  } catch {
-    return fallback;
-  }
-}
-
-export async function generateMetadata(): Promise<Metadata> {
-  const requestHeaders = await headers();
-  const host =
-    requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
-  const origin = safeRequestOrigin(
-    host,
-    requestHeaders.get("x-forwarded-proto"),
-  );
+export function generateMetadata(): Metadata {
+  const origin = new URL("https://vods.oshi.tw");
   const socialImage = new URL("/og.png", origin).toString();
 
   return {
@@ -68,11 +51,13 @@ export const viewport: Viewport = {
   ],
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const nonce = (await headers()).get("x-nonce") ?? undefined;
   return (
     <html lang="zh-TW" suppressHydrationWarning>
       <head>
         <script
+          nonce={nonce}
           dangerouslySetInnerHTML={{
             __html:
               "(function(){try{var t=localStorage.getItem('theme');var d=window.matchMedia('(prefers-color-scheme:dark)').matches;if(t==='dark'||(!t&&d))document.documentElement.classList.add('dark')}catch(e){}})()",

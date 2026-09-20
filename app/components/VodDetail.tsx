@@ -29,7 +29,7 @@ import type {
   VodCardData,
   VodExportManifest,
   VodExportSocialLinks,
-  VodExportStreamer,
+  VodStreamerProfile,
   VodExportVod,
 } from "../../lib/vod-types";
 import { Avatar } from "./Avatar";
@@ -125,7 +125,7 @@ function RelatedCard({ card }: { card: VodCardData }) {
 }
 
 interface VodDetailProps {
-  streamer: VodExportStreamer;
+  streamer: VodStreamerProfile;
   vod: VodExportVod;
   manifest: VodExportManifest;
   relatedVods: VodCardData[];

@@ -13,7 +13,7 @@ const snapshot = JSON.stringify({
       youtubeChannelId: "test-channel",
       avatarUrl: null,
       group: null,
-      socialLinks: {},
+      socialLinks: { futureProvider: "https://example.com/tester" },
       vods: [
         {
           title: "測試歌回 VOD",
@@ -74,11 +74,12 @@ async function worker() {
   return (await import(workerUrl.href)).default;
 }
 
-async function render(pathname = "/") {
+async function render(pathname = "/", { origin = "http://localhost", method = "GET", headers = {} } = {}) {
   const app = await worker();
   return app.fetch(
-    new Request(`http://localhost${pathname}`, {
-      headers: { accept: "text/html" },
+    new Request(`${origin}${pathname}`, {
+      method,
+      headers: { accept: "text/html", ...headers },
     }),
     {
       ASSETS: {
@@ -92,27 +93,18 @@ async function render(pathname = "/") {
   );
 }
 
-test("redirects plain-HTTP visitors to HTTPS permanently", async () => {
-  const app = await worker();
-  const response = await app.fetch(
-    new Request("http://vods.oshi.tw/vod/tester/abcDEF12345?list=1", {
-      headers: { accept: "text/html" },
-    }),
-    {
-      ASSETS: {
-        fetch: async () => new Response("Not found", { status: 404 }),
-      },
-    },
-    {
-      waitUntil() {},
-      passThroughOnException() {},
-    },
-  );
-  assert.equal(response.status, 301);
-  assert.equal(
-    response.headers.get("location"),
-    "https://vods.oshi.tw/vod/tester/abcDEF12345?list=1",
-  );
+test("redirects plain-HTTP GET and HEAD visitors to HTTPS permanently", async () => {
+  for (const method of ["GET", "HEAD"]) {
+    const response = await render("/vod/tester/abcDEF12345?list=1", {
+      origin: "http://vods.oshi.tw",
+      method,
+    });
+    assert.equal(response.status, 301);
+    assert.equal(
+      response.headers.get("location"),
+      "https://vods.oshi.tw/vod/tester/abcDEF12345?list=1",
+    );
+  }
 });
 
 test("keeps localhost HTTP for dev and stamps HSTS on responses", async () => {
@@ -122,6 +114,57 @@ test("keeps localhost HTTP for dev and stamps HSTS on responses", async () => {
     response.headers.get("strict-transport-security") ?? "",
     /max-age=31536000/,
   );
+});
+
+test("HTML responses use fresh nonces for every inline script and disallow framing", async () => {
+  const nonces = new Set();
+  for (const pathname of ["/", "/vod/tester/abcDEF12345", "/does-not-exist"]) {
+    const response = await render(pathname, { headers: {
+      "content-security-policy": "script-src 'unsafe-inline'",
+      "x-nonce": "attacker-supplied",
+    } });
+    const policy = response.headers.get("content-security-policy");
+    const scriptPolicy = policy.split(";").find((part) => part.trim().startsWith("script-src "));
+    const nonce = /'nonce-([a-f0-9]{32})'/.exec(scriptPolicy)?.[1];
+    assert.ok(nonce);
+    assert.doesNotMatch(scriptPolicy, /unsafe-inline|unsafe-eval|attacker-supplied/);
+    assert.match(policy, /frame-ancestors 'none'/);
+    assert.match(policy, /style-src[^;]*https:\/\/fonts\.googleapis\.com/);
+    assert.match(policy, /font-src[^;]*https:\/\/fonts\.gstatic\.com/);
+    assert.equal(response.headers.get("x-frame-options"), "DENY");
+    assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+    assert.equal(response.headers.get("referrer-policy"), "strict-origin-when-cross-origin");
+    assert.ok(!nonces.has(nonce), "each response must receive a new nonce");
+    nonces.add(nonce);
+    const html = await response.text();
+    const inlineScripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)]
+      .filter(([, attributes]) => !/\bsrc=/.test(attributes));
+    assert.ok(inlineScripts.length > 1, "check both the theme bootstrap and RSC scripts");
+    for (const [, attributes] of inlineScripts) {
+      assert.ok(attributes.includes(`nonce="${nonce}"`), `missing CSP nonce: ${attributes}`);
+    }
+  }
+});
+
+test("forwarded host headers cannot change social image URLs", async () => {
+  const response = await render("/", { headers: {
+    "x-forwarded-host": "attacker.example",
+    "x-forwarded-proto": "http",
+  } });
+  const html = await response.text();
+  assert.match(html, /content="https:\/\/vods\.oshi\.tw\/og\.png"/);
+  assert.doesNotMatch(html, /attacker\.example/);
+});
+
+test("the read-only site rejects unsupported methods on HTTP and HTTPS before redirects or routing", async () => {
+  for (const origin of ["http://localhost", "http://vods.oshi.tw", "https://vods.oshi.tw"]) {
+    for (const method of ["POST", "PUT", "PATCH", "DELETE", "OPTIONS"]) {
+      const response = await render("/", { origin, method });
+      assert.equal(response.status, 405, `${method} ${origin}`);
+      assert.equal(response.headers.get("allow"), "GET, HEAD");
+      assert.equal(response.headers.get("location"), null);
+    }
+  }
 });
 
 test("server-renders the searchable VOD archive", async () => {

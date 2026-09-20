@@ -54,6 +54,8 @@ export interface VodExportSnapshot {
   streamers: VodExportStreamer[];
 }
 
+export type VodStreamerProfile = Omit<VodExportStreamer, "vods">;
+
 export interface VodDataset {
   manifest: VodExportManifest;
   snapshot: VodExportSnapshot;
