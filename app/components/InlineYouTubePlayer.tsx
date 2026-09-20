@@ -11,6 +11,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { loadYouTubeApi, type YouTubePlayer } from "../../lib/youtube-api";
 
 export interface PlaybackRequest {
   requestId: number;
@@ -41,118 +42,6 @@ interface InlineYouTubePlayerProps {
   onRequestFullVod: () => void;
   onReadyChange?: (ready: boolean) => void;
   onStatusChange?: (status: PlaybackStatus) => void;
-}
-
-interface YouTubePlayer {
-  destroy(): void;
-  getCurrentTime(): number;
-  loadVideoById(options: {
-    videoId: string;
-    startSeconds?: number;
-    endSeconds?: number;
-  }): void;
-  pauseVideo(): void;
-  playVideo(): void;
-}
-
-interface YouTubePlayerEvent {
-  target: YouTubePlayer;
-}
-
-interface YouTubePlayerStateEvent extends YouTubePlayerEvent {
-  data: number;
-}
-
-interface YouTubePlayerErrorEvent extends YouTubePlayerEvent {
-  data: number;
-}
-
-interface YouTubeNamespace {
-  Player: new (
-    element: HTMLElement,
-    options: {
-      videoId: string;
-      playerVars: {
-        autoplay: 0 | 1;
-        controls: 0 | 1;
-        origin: string;
-        playsinline: 0 | 1;
-        rel: 0 | 1;
-      };
-      events: {
-        onReady: (event: YouTubePlayerEvent) => void;
-        onStateChange: (event: YouTubePlayerStateEvent) => void;
-        onError: (event: YouTubePlayerErrorEvent) => void;
-        onAutoplayBlocked: () => void;
-      };
-    },
-  ) => YouTubePlayer;
-  PlayerState: {
-    ENDED: 0;
-    PLAYING: 1;
-    PAUSED: 2;
-    BUFFERING: 3;
-    CUED: 5;
-  };
-}
-
-declare global {
-  interface Window {
-    YT?: YouTubeNamespace;
-    onYouTubeIframeAPIReady?: () => void;
-  }
-}
-
-let youtubeApiPromise: Promise<YouTubeNamespace> | null = null;
-
-function loadYouTubeApi(): Promise<YouTubeNamespace> {
-  if (window.YT?.Player) return Promise.resolve(window.YT);
-  if (youtubeApiPromise) return youtubeApiPromise;
-
-  youtubeApiPromise = new Promise<YouTubeNamespace>((resolve, reject) => {
-    const previousReadyHandler = window.onYouTubeIframeAPIReady;
-    const timeoutId = window.setTimeout(() => {
-      reject(new Error("YouTube IFrame API timed out"));
-    }, 15_000);
-
-    window.onYouTubeIframeAPIReady = () => {
-      try {
-        previousReadyHandler?.();
-      } finally {
-        window.clearTimeout(timeoutId);
-        if (window.YT?.Player) {
-          resolve(window.YT);
-        } else {
-          reject(new Error("YouTube IFrame API did not initialize"));
-        }
-      }
-    };
-
-    const existingScript = document.querySelector<HTMLScriptElement>(
-      'script[src="https://www.youtube.com/iframe_api"]',
-    );
-    const script = existingScript ?? document.createElement("script");
-
-    script.addEventListener(
-      "error",
-      () => {
-        window.clearTimeout(timeoutId);
-        reject(new Error("YouTube IFrame API failed to load"));
-      },
-      { once: true },
-    );
-
-    if (!existingScript) {
-      script.src = "https://www.youtube.com/iframe_api";
-      script.async = true;
-      document.head.append(script);
-    }
-  }).catch((error) => {
-    youtubeApiPromise = null;
-    throw error;
-  });
-
-  return youtubeApiPromise;
 }
 
 function formatTimestamp(seconds: number): string {
@@ -203,6 +92,7 @@ export const InlineYouTubePlayer = forwardRef<
   const [ready, setReady] = useState(false);
   const [status, setStatus] = useState<PlaybackStatus>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [initializationAttempt, setInitializationAttempt] = useState(0);
 
   useEffect(() => {
     requestRef.current = request;
@@ -296,6 +186,10 @@ export const InlineYouTubePlayer = forwardRef<
         requestRef.current = nextRequest;
         const player = playerRef.current;
         if (!player) {
+          if (statusRef.current === "error") {
+            setError(null);
+            setInitializationAttempt((attempt) => attempt + 1);
+          }
           publishStatus("loading");
           return false;
         }
@@ -410,6 +304,8 @@ export const InlineYouTubePlayer = forwardRef<
       onReadyChangeRef.current?.(false);
       const player = playerRef.current;
       playerRef.current = null;
+      appliedRequestIdRef.current = null;
+      boundaryReachedRef.current = false;
       player?.destroy();
       mountRoot.replaceChildren();
     };
@@ -420,12 +316,18 @@ export const InlineYouTubePlayer = forwardRef<
     finishSegment,
     publishStatus,
     videoId,
+    initializationAttempt,
   ]);
 
   function retryPlayback() {
     const player = playerRef.current;
     const activeRequest = requestRef.current;
-    if (!player) return;
+    if (!player || !ready) {
+      setError(null);
+      publishStatus("loading");
+      setInitializationAttempt((attempt) => attempt + 1);
+      return;
+    }
 
     setError(null);
     boundaryReachedRef.current = false;
@@ -493,7 +395,7 @@ export const InlineYouTubePlayer = forwardRef<
                   繼續播放
                 </button>
               )}
-              {status === "error" && ready && (
+              {status === "error" && (
                 <button type="button" onClick={retryPlayback}>
                   <RotateCcw aria-hidden="true" />
                   重試

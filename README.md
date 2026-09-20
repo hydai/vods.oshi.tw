@@ -16,6 +16,8 @@
 
 新 snapshot 全部通過驗證後才會原子切換；更新失敗時，常駐 instance 會繼續使用上一個已驗證版本。公開 feed 不支援瀏覽器 CORS，因此資料不會由訪客的瀏覽器直接下載。
 
+同一 instance 的併發請求共用一次下載；快取每 60 秒在背景更新，下載與讀取 body 合計最多 10 秒，失敗後等待 15 秒再重試。已驗證的舊資料會在更新期間繼續提供。未知的社群平台欄位會略過，直到介面支援該平台。
+
 規格文件：
 
 - [Consumer guide](https://data.oshi.tw/vod/v1/guide.md)
@@ -35,6 +37,10 @@ npm run dev
 npm run lint
 npm test
 ```
+
+`npm test` 會建置、產生 Workers bindings 型別，分別檢查瀏覽器與 Worker 型別，並執行單元測試及 Miniflare／workerd 整合測試；測試使用本機 feed，不連線至正式資料來源。建置後可用 `npm run typecheck` 單獨檢查型別。
+
+網站只接受 GET／HEAD。HTML 的 CSP 使用每次回應產生的 nonce，並允許 YouTube 播放器；新增外部資源時需同步檢查 `worker/index.ts` 的政策。`ASSETS` binding 由 `vite.config.ts` 設定；未啟用 Images binding，因此圖片端點回傳原圖。
 
 ## 主要頁面
 

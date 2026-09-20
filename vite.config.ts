@@ -13,6 +13,8 @@ const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
 
 const workerConfig = {
   main: "./worker/index.ts",
+  compatibility_date: "2026-09-18",
+  assets: { binding: "ASSETS" },
   compatibility_flags: ["nodejs_compat"],
   // Production serves exclusively from the custom domain; the workers.dev
   // fallback stays off so the site has a single canonical origin.

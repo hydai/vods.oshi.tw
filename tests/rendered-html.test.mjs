@@ -13,7 +13,7 @@ const snapshot = JSON.stringify({
       youtubeChannelId: "test-channel",
       avatarUrl: null,
       group: null,
-      socialLinks: {},
+      socialLinks: { futureProvider: "https://example.com/tester" },
       vods: [
         {
           title: "測試歌回 VOD",
@@ -74,11 +74,12 @@ async function worker() {
   return (await import(workerUrl.href)).default;
 }
 
-async function render(pathname = "/") {
+async function render(pathname = "/", { method = "GET", headers = {} } = {}) {
   const app = await worker();
   return app.fetch(
     new Request(`http://localhost${pathname}`, {
-      headers: { accept: "text/html" },
+      method,
+      headers: { accept: "text/html", ...headers },
     }),
     {
       ASSETS: {
@@ -122,6 +123,54 @@ test("keeps localhost HTTP for dev and stamps HSTS on responses", async () => {
     response.headers.get("strict-transport-security") ?? "",
     /max-age=31536000/,
   );
+});
+
+test("HTML responses use fresh nonces for every inline script and disallow framing", async () => {
+  const nonces = new Set();
+  for (const pathname of ["/", "/vod/tester/abcDEF12345", "/does-not-exist"]) {
+    const response = await render(pathname, { headers: {
+      "content-security-policy": "script-src 'unsafe-inline'",
+      "x-nonce": "attacker-supplied",
+    } });
+    const policy = response.headers.get("content-security-policy");
+    const scriptPolicy = policy.split(";").find((part) => part.trim().startsWith("script-src "));
+    const nonce = /'nonce-([a-f0-9]{32})'/.exec(scriptPolicy)?.[1];
+    assert.ok(nonce);
+    assert.doesNotMatch(scriptPolicy, /unsafe-inline|unsafe-eval|attacker-supplied/);
+    assert.match(policy, /frame-ancestors 'none'/);
+    assert.match(policy, /style-src[^;]*https:\/\/fonts\.googleapis\.com/);
+    assert.match(policy, /font-src[^;]*https:\/\/fonts\.gstatic\.com/);
+    assert.equal(response.headers.get("x-frame-options"), "DENY");
+    assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+    assert.equal(response.headers.get("referrer-policy"), "strict-origin-when-cross-origin");
+    assert.ok(!nonces.has(nonce), "each response must receive a new nonce");
+    nonces.add(nonce);
+    const html = await response.text();
+    const inlineScripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)]
+      .filter(([, attributes]) => !/\bsrc=/.test(attributes));
+    assert.ok(inlineScripts.length > 1, "check both the theme bootstrap and RSC scripts");
+    for (const [, attributes] of inlineScripts) {
+      assert.ok(attributes.includes(`nonce="${nonce}"`), `missing CSP nonce: ${attributes}`);
+    }
+  }
+});
+
+test("forwarded host headers cannot change social image URLs", async () => {
+  const response = await render("/", { headers: {
+    "x-forwarded-host": "attacker.example",
+    "x-forwarded-proto": "http",
+  } });
+  const html = await response.text();
+  assert.match(html, /content="https:\/\/vods\.oshi\.tw\/og\.png"/);
+  assert.doesNotMatch(html, /attacker\.example/);
+});
+
+test("the read-only site rejects action requests before invoking the framework", async () => {
+  for (const method of ["POST", "PUT", "PATCH", "DELETE"]) {
+    const response = await render("/", { method });
+    assert.equal(response.status, 405);
+    assert.equal(response.headers.get("allow"), "GET, HEAD");
+  }
 });
 
 test("server-renders the searchable VOD archive", async () => {
