@@ -55,6 +55,20 @@ test("the built Worker survives an initiating client disconnect, shares data, an
     return runtime.dispose();
   });
 
+  for (const protocol of ["http:", "https:"]) {
+    for (const pathname of ["/", "/_vinext/image?url=%2Fog.png&w=64"]) {
+      const response = await runtime.dispatchFetch(`${protocol}//vods.oshi.tw${pathname}`, {
+        method: "POST",
+        redirect: "manual",
+      });
+      assert.equal(response.status, 405);
+      assert.equal(response.headers.get("allow"), "GET, HEAD");
+      assert.equal(response.headers.get("location"), null);
+      await response.text();
+    }
+  }
+  assert.deepEqual(calls, [], "rejected methods must not start a dataset download");
+
   const controller = new AbortController();
   const disconnected = runtime.dispatchFetch("https://vods.oshi.tw/", {
     signal: controller.signal,

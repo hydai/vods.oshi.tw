@@ -74,10 +74,10 @@ async function worker() {
   return (await import(workerUrl.href)).default;
 }
 
-async function render(pathname = "/", { method = "GET", headers = {} } = {}) {
+async function render(pathname = "/", { origin = "http://localhost", method = "GET", headers = {} } = {}) {
   const app = await worker();
   return app.fetch(
-    new Request(`http://localhost${pathname}`, {
+    new Request(`${origin}${pathname}`, {
       method,
       headers: { accept: "text/html", ...headers },
     }),
@@ -93,27 +93,18 @@ async function render(pathname = "/", { method = "GET", headers = {} } = {}) {
   );
 }
 
-test("redirects plain-HTTP visitors to HTTPS permanently", async () => {
-  const app = await worker();
-  const response = await app.fetch(
-    new Request("http://vods.oshi.tw/vod/tester/abcDEF12345?list=1", {
-      headers: { accept: "text/html" },
-    }),
-    {
-      ASSETS: {
-        fetch: async () => new Response("Not found", { status: 404 }),
-      },
-    },
-    {
-      waitUntil() {},
-      passThroughOnException() {},
-    },
-  );
-  assert.equal(response.status, 301);
-  assert.equal(
-    response.headers.get("location"),
-    "https://vods.oshi.tw/vod/tester/abcDEF12345?list=1",
-  );
+test("redirects plain-HTTP GET and HEAD visitors to HTTPS permanently", async () => {
+  for (const method of ["GET", "HEAD"]) {
+    const response = await render("/vod/tester/abcDEF12345?list=1", {
+      origin: "http://vods.oshi.tw",
+      method,
+    });
+    assert.equal(response.status, 301);
+    assert.equal(
+      response.headers.get("location"),
+      "https://vods.oshi.tw/vod/tester/abcDEF12345?list=1",
+    );
+  }
 });
 
 test("keeps localhost HTTP for dev and stamps HSTS on responses", async () => {
@@ -165,11 +156,14 @@ test("forwarded host headers cannot change social image URLs", async () => {
   assert.doesNotMatch(html, /attacker\.example/);
 });
 
-test("the read-only site rejects action requests before invoking the framework", async () => {
-  for (const method of ["POST", "PUT", "PATCH", "DELETE"]) {
-    const response = await render("/", { method });
-    assert.equal(response.status, 405);
-    assert.equal(response.headers.get("allow"), "GET, HEAD");
+test("the read-only site rejects unsupported methods on HTTP and HTTPS before redirects or routing", async () => {
+  for (const origin of ["http://localhost", "http://vods.oshi.tw", "https://vods.oshi.tw"]) {
+    for (const method of ["POST", "PUT", "PATCH", "DELETE", "OPTIONS"]) {
+      const response = await render("/", { origin, method });
+      assert.equal(response.status, 405, `${method} ${origin}`);
+      assert.equal(response.headers.get("allow"), "GET, HEAD");
+      assert.equal(response.headers.get("location"), null);
+    }
   }
 });
 

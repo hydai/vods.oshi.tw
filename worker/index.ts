@@ -30,16 +30,16 @@ const worker = {
   async fetch(request: Request, env: WorkerEnv, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
 
-    if (url.protocol === "http:" && !LOCAL_HOSTNAMES.has(url.hostname)) {
-      url.protocol = "https:";
-      return Response.redirect(url.href, 301);
-    }
-
     if (request.method !== "GET" && request.method !== "HEAD") {
       return withSecurityHeaders(new Response("Method not allowed", {
         status: 405,
         headers: { Allow: "GET, HEAD" },
       }));
+    }
+
+    if (url.protocol === "http:" && !LOCAL_HOSTNAMES.has(url.hostname)) {
+      url.protocol = "https:";
+      return Response.redirect(url.href, 301);
     }
 
     if (url.pathname === "/_vinext/image") {
