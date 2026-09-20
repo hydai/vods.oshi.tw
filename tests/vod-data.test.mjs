@@ -3,6 +3,8 @@ import test from "node:test";
 import { createVodDatasetLoader, makeVodCards } from "../lib/vod-data.ts";
 import { createFeed, manifestUrl } from "./helpers/vod-fixture.mjs";
 
+const INITIAL_TIME = Date.parse("2026-09-20T00:00:00.000Z");
+
 test("concurrent cold requests share one fully consumed dataset download", async () => {
   const feed = createFeed();
   const calls = [];
@@ -24,7 +26,7 @@ test("concurrent cold requests share one fully consumed dataset download", async
 });
 
 test("cold failures respect the retry delay even without cached data", async () => {
-  let now = 0;
+  let now = INITIAL_TIME;
   let calls = 0;
   const load = createVodDatasetLoader({
     now: () => now,
@@ -37,7 +39,7 @@ test("cold failures respect the retry delay even without cached data", async () 
     await assert.rejects(load(), /upstream unavailable/);
   }
   assert.equal(calls, 1);
-  now = 15_000;
+  now += 15_000;
   await assert.rejects(load(), /upstream unavailable/);
   assert.equal(calls, 2);
 });
@@ -84,7 +86,7 @@ test("invalid response headers abort the unread body instead of leaving I/O open
 test("expired data is served immediately while a stalled body times out in the background", async (t) => {
   t.mock.method(console, "error", () => {});
   const feed = createFeed();
-  let now = 0;
+  let now = INITIAL_TIME;
   let stalled = false;
   let cancelled = false;
   let calls = 0;
@@ -100,7 +102,7 @@ test("expired data is served immediately while a stalled body times out in the b
     },
   });
   const original = await load();
-  now = 60_000;
+  now += 60_000;
   stalled = true;
   const backgroundTasks = [];
   assert.equal(await load((task) => backgroundTasks.push(task)), original);
@@ -116,29 +118,97 @@ test("expired data is served immediately while a stalled body times out in the b
 test("invalid calendar timestamps cannot enter the cache, including the same-hash path", async (t) => {
   t.mock.method(console, "error", () => {});
   let feed = createFeed({ publishedAt: "2026-99-99T00:00:00.000Z" });
-  let now = 0;
+  let now = INITIAL_TIME;
   const load = createVodDatasetLoader({
     now: () => now,
     fetcher: async (url) => feed.respond(url),
   });
   await assert.rejects(load(), /valid canonical UTC timestamp/);
-  now = 15_000;
+  now += 15_000;
   feed = createFeed();
   const valid = await load();
   now += 60_000;
   feed = createFeed({ publishedAt: "2026-02-29T00:00:00.000Z" });
   assert.equal(await load(), valid);
   now += 15_000;
-  feed = createFeed({ publishedAt: "2026-09-21T00:00:00.000Z" });
+  feed = createFeed({ publishedAt: new Date(now).toISOString() });
   const updated = await load();
   assert.equal(updated.snapshot, valid.snapshot);
-  assert.equal(updated.manifest.publishedAt, "2026-09-21T00:00:00.000Z");
+  assert.equal(updated.manifest.publishedAt, new Date(now).toISOString());
+});
+
+test("far-future cold manifests are rejected before downloading a snapshot and recover after backoff", async () => {
+  let now = INITIAL_TIME;
+  let feed = createFeed({ publishedAt: "9999-12-31T23:59:59.999Z" });
+  const calls = [];
+  const load = createVodDatasetLoader({
+    now: () => now,
+    fetcher: async (url) => {
+      calls.push(url);
+      return feed.respond(url);
+    },
+  });
+  await assert.rejects(load(), /publishedAt.*future/);
+  await assert.rejects(load(), /publishedAt.*future/);
+  assert.deepEqual(calls, [manifestUrl]);
+
+  now += 15_000;
+  feed = createFeed({ publishedAt: new Date(now).toISOString() });
+  const recovered = await load();
+  assert.equal(recovered.manifest.publishedAt, feed.manifest.publishedAt);
+  assert.deepEqual(calls, [manifestUrl, manifestUrl, feed.manifest.snapshotUrl]);
+});
+
+test("far-future refreshes cannot pin the cache on either the same-hash or new-hash path", async (t) => {
+  t.mock.method(console, "error", () => {});
+  for (const songTitle of ["第一首歌", "不同快照"]) {
+    let now = INITIAL_TIME;
+    let feed = createFeed();
+    const calls = [];
+    const load = createVodDatasetLoader({
+      now: () => now,
+      fetcher: async (url) => {
+        calls.push(url);
+        return feed.respond(url);
+      },
+    });
+    const original = await load();
+    now += 60_000;
+    feed = createFeed({ songTitle, publishedAt: "9999-12-31T23:59:59.999Z" });
+    const backgroundTasks = [];
+    assert.equal(await load((task) => backgroundTasks.push(task)), original);
+    await Promise.all(backgroundTasks);
+    assert.equal(await load(), original);
+    assert.equal(calls.length, 3, "reject before fetching a future-dated snapshot");
+
+    now += 15_000;
+    feed = createFeed({ songTitle: "正常更新歌曲", publishedAt: new Date(now).toISOString() });
+    const recovered = await load();
+    assert.notEqual(recovered.snapshot, original.snapshot);
+    assert.equal(recovered.manifest.publishedAt, feed.manifest.publishedAt);
+    assert.equal(recovered.snapshot.streamers[0].vods[0].performances[0].title, "正常更新歌曲");
+  }
+});
+
+test("publishedAt allows at most five minutes of future clock skew", async () => {
+  for (const offset of [0, 5 * 60_000, 5 * 60_000 + 1]) {
+    const feed = createFeed({ publishedAt: new Date(INITIAL_TIME + offset).toISOString() });
+    const load = createVodDatasetLoader({
+      now: () => INITIAL_TIME,
+      fetcher: async (url) => feed.respond(url),
+    });
+    if (offset <= 5 * 60_000) {
+      assert.equal((await load()).manifest.publishedAt, feed.manifest.publishedAt);
+    } else {
+      await assert.rejects(load(), /publishedAt.*future/);
+    }
+  }
 });
 
 test("same-hash metadata mismatches and older snapshots preserve validated data", async (t) => {
   t.mock.method(console, "error", () => {});
   let feed = createFeed();
-  let now = 0;
+  let now = INITIAL_TIME;
   const load = createVodDatasetLoader({ now: () => now, fetcher: async (url) => feed.respond(url) });
   const original = await load();
   now += 60_000;

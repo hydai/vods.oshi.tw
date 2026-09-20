@@ -18,6 +18,7 @@ const MAX_SNAPSHOT_BYTES = 10_485_760;
 const REFRESH_INTERVAL_MS = 60_000;
 const FAILED_REFRESH_RETRY_MS = 15_000;
 const DOWNLOAD_TIMEOUT_MS = 10_000;
+const MAX_PUBLISHED_AT_CLOCK_SKEW_MS = 5 * 60_000;
 
 const V1_VERSION = /^1\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/;
 const SHA256 = /^[0-9a-f]{64}$/;
@@ -423,8 +424,12 @@ function validateSnapshotSemantics(
   assertCounts(snapshotCounts(snapshot), manifest.counts);
 }
 
-function parseManifest(raw: unknown): VodExportManifest {
+function parseManifest(raw: unknown, now: number): VodExportManifest {
   const manifest = manifestSchema.parse(raw) as VodExportManifest;
+  // A future publication must not poison the monotonic rollback guard.
+  if (Date.parse(manifest.publishedAt) > now + MAX_PUBLISHED_AT_CLOCK_SKEW_MS) {
+    throw new Error("Manifest publishedAt is too far in the future");
+  }
   const expectedSnapshotUrl = `${TRUSTED_SNAPSHOT_ORIGIN}/vod/v1/snapshots/${manifest.sha256}.json`;
   if (manifest.snapshotUrl !== expectedSnapshotUrl) {
     throw new Error("Manifest contains an unexpected snapshot URL");
@@ -436,6 +441,7 @@ async function refreshDataset(
   previous: VodDataset | null,
   fetcher: typeof fetch,
   signal: AbortSignal,
+  now: () => number,
 ): Promise<VodDataset> {
   const manifestResponse = await fetcher(MANIFEST_URL, {
     redirect: "manual",
@@ -448,7 +454,7 @@ async function refreshDataset(
     MAX_MANIFEST_BYTES,
     signal,
   );
-  const manifest = parseManifest(parseJson(manifestBytes, "Manifest"));
+  const manifest = parseManifest(parseJson(manifestBytes, "Manifest"), now());
 
   if (previous?.manifest.sha256 === manifest.sha256) {
     assertCounts(manifest.counts, previous.manifest.counts);
@@ -525,7 +531,7 @@ export function createVodDatasetLoader({
         () => controller.abort(new Error("VOD dataset download timed out")),
         timeoutMs,
       );
-      activeRefresh = refreshDataset(activeDataset, fetcher, controller.signal)
+      activeRefresh = refreshDataset(activeDataset, fetcher, controller.signal, now)
         .then((dataset) => {
           activeDataset = dataset;
           nextRefreshAt = now() + REFRESH_INTERVAL_MS;
