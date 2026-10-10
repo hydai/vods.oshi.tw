@@ -75,7 +75,7 @@ test("keeps the playhead on the timeline", () => {
 test("labels the axis at round intervals and the full length", () => {
   for (const [scale, ticks] of [
     [7745, [0, 1800, 3600, 5400, 7745]],
-    [3374, [0, 900, 1800, 2700, 3374]],
+    [3374, [0, 900, 1800, 3374]],
     [21600, [0, 7200, 14400, 21600]],
     [90, [0, 60, 90]],
   ]) {
@@ -83,7 +83,9 @@ test("labels the axis at round intervals and the full length", () => {
   }
 });
 
-test("drops a round tick that would crowd the end label", () => {
+test("drops a round tick whose label would overlap the end label on a phone", () => {
+  // 5400s sits at 74% of 7300s, clear of the end label even on a 242px rail.
   assert.deepEqual(timelineTicks(7300), [0, 1800, 3600, 5400, 7300]);
-  assert.deepEqual(timelineTicks(8000), [0, 1800, 3600, 5400, 7200, 8000]);
+  // At 76% of 7100s the two labels would overlap on that rail.
+  assert.deepEqual(timelineTicks(7100), [0, 1800, 3600, 7100]);
 });

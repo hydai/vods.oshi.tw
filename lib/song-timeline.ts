@@ -22,9 +22,11 @@ const TICK_STEPS_SECONDS = [
   LARGEST_TICK_STEP_SECONDS,
 ];
 const MAX_INTERIOR_TICKS = 4;
-// Share of the timeline kept clear before the end label so a round tick
-// never overlaps it.
-const END_LABEL_CLEARANCE = 0.08;
+// Share of the timeline kept clear before the end label so a round tick's
+// label never overlaps it. Labels are about 38px wide, so a centred tick label
+// needs about 61px before the right-aligned end label. The narrowest rail is
+// 242px, at the 320px minimum viewport.
+const END_LABEL_CLEARANCE = 0.25;
 
 export function formatTimestamp(seconds: number): string {
   const rounded = Math.max(0, Math.floor(seconds));
