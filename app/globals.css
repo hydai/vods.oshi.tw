@@ -1570,6 +1570,174 @@ a {
   background: #f59e0b;
 }
 
+.song-timeline {
+  border: 1px solid var(--border-glass);
+  border-top: 0;
+  background: var(--bg-surface-muted);
+  padding: 15px 13px 4px;
+}
+
+.song-timeline-track {
+  --song-timeline-rail: color-mix(in srgb, var(--text-tertiary) 16%, transparent);
+  position: relative;
+  height: 22px;
+  border-radius: var(--radius-sm);
+  background: var(--song-timeline-rail);
+}
+
+.song-timeline-track.is-loading {
+  background: linear-gradient(
+    90deg,
+    var(--song-timeline-rail) 0%,
+    color-mix(in srgb, var(--text-tertiary) 6%, transparent) 50%,
+    var(--song-timeline-rail) 100%
+  );
+  background-size: 200% 100%;
+  animation: song-timeline-shimmer 1.4s ease-in-out infinite;
+}
+
+/* Above the player's poster (z-index 2) and recovery overlay (z-index 3),
+   so a tooltip can rise over the bottom of the video. */
+.song-timeline-segment {
+  position: absolute;
+  z-index: 4;
+  top: 4px;
+  bottom: 4px;
+  min-width: 3px;
+  border: 0;
+  border-radius: 4px;
+  background: linear-gradient(
+    90deg,
+    var(--accent-pink-light),
+    var(--accent-blue-light)
+  );
+  padding: 0;
+  opacity: 0.88;
+  animation: song-timeline-fade-in 240ms ease;
+  transition: top 120ms ease, bottom 120ms ease, opacity 120ms ease;
+}
+
+.song-timeline-segment.is-active {
+  z-index: 5;
+  background: var(--accent-pink);
+  opacity: 1;
+  box-shadow:
+    0 0 0 2px var(--bg-surface),
+    0 0 0 4px color-mix(in srgb, var(--accent-pink) 35%, transparent);
+}
+
+.song-timeline-tooltip {
+  position: absolute;
+  bottom: calc(100% + 9px);
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  border-radius: var(--radius-sm);
+  background: var(--text-primary);
+  padding: 6px 9px;
+  box-shadow: var(--shadow-card);
+  color: var(--bg-surface);
+  font-size: 11px;
+  font-weight: 750;
+  text-align: left;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%);
+  transition: opacity 120ms ease;
+}
+
+.song-timeline-tooltip small {
+  color: color-mix(in srgb, var(--bg-surface) 72%, transparent);
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.song-timeline-segment.tooltip-start .song-timeline-tooltip {
+  left: 0;
+  transform: none;
+}
+
+.song-timeline-segment.tooltip-end .song-timeline-tooltip {
+  right: 0;
+  left: auto;
+  transform: none;
+}
+
+/* Spans the whole track, so translating it by N% puts its left edge at N%. */
+.song-timeline-playhead {
+  position: absolute;
+  z-index: 6;
+  inset: -4px 0;
+  pointer-events: none;
+}
+
+.song-timeline-playhead::before,
+.song-timeline-playhead::after {
+  position: absolute;
+  background: var(--text-primary);
+  content: "";
+}
+
+.song-timeline-playhead::before {
+  top: 0;
+  bottom: 0;
+  left: -1px;
+  width: 2px;
+  border-radius: 2px;
+}
+
+.song-timeline-playhead::after {
+  top: -3px;
+  left: -4px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.song-timeline-axis {
+  position: relative;
+  height: 16px;
+  margin-top: 5px;
+  color: var(--text-tertiary);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+
+.song-timeline-axis span {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.song-timeline-axis .is-start {
+  transform: none;
+}
+
+.song-timeline-axis .is-end {
+  transform: translateX(-100%);
+}
+
+@keyframes song-timeline-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+
+  to {
+    background-position: -100% 0;
+  }
+}
+
+@keyframes song-timeline-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
 .spin {
   animation: player-spin 900ms linear infinite;
 }
@@ -2294,6 +2462,17 @@ a {
 
   .song-row.is-active:hover {
     background: var(--bg-accent-pink-muted);
+  }
+
+  .song-timeline-segment:hover {
+    z-index: 7;
+    top: 2px;
+    bottom: 2px;
+    opacity: 1;
+  }
+
+  .song-timeline-segment:hover .song-timeline-tooltip {
+    opacity: 1;
   }
 
   .related-card:hover {

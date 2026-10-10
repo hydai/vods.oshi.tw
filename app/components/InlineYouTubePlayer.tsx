@@ -10,6 +10,7 @@ import {
   useImperativeHandle,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import {
   loadYouTubeApi,
@@ -49,6 +50,8 @@ interface InlineYouTubePlayerProps {
   onReadyChange?: (ready: boolean) => void;
   onStatusChange?: (status: PlaybackStatus) => void;
   onDurationChange?: (seconds: number) => void;
+  /** Rendered between the video and its playback caption. */
+  timeline?: ReactNode;
 }
 
 function formatTimestamp(seconds: number): string {
@@ -84,6 +87,7 @@ export const InlineYouTubePlayer = forwardRef<
     onReadyChange,
     onStatusChange,
     onDurationChange,
+    timeline,
   },
   ref,
 ) {
@@ -434,6 +438,8 @@ export const InlineYouTubePlayer = forwardRef<
           </div>
         )}
       </div>
+
+      {timeline}
 
       <div className="inline-player-caption" aria-live="polite">
         <span className={`player-status-dot is-${status}`} aria-hidden="true" />

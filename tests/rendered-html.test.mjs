@@ -220,6 +220,27 @@ test("server-renders VOD songs as inline playback buttons", async () => {
   );
 });
 
+test("server-renders the song timeline under the video, waiting for its length", async () => {
+  const html = await (await render("/vod/tester/abcDEF12345")).text();
+
+  const frame = html.indexOf('class="inline-player-frame"');
+  const timeline = html.search(
+    /<div\b(?=[^>]*\bclass="song-timeline")(?=[^>]*\baria-hidden="true")[^>]*>/,
+  );
+  const caption = html.indexOf('class="inline-player-caption"');
+  assert.ok(frame >= 0, "the inline player must render");
+  assert.ok(
+    frame < timeline && timeline < caption,
+    "the timeline sits between the video and its playback caption",
+  );
+  assert.match(html, /class="song-timeline-track is-loading"/);
+  assert.doesNotMatch(
+    html,
+    /song-timeline-segment/,
+    "segments wait for the player's video length instead of a guessed scale",
+  );
+});
+
 test("inline YouTube player bounds playback and cleans up resources", async () => {
   const source = await readFile(
     new URL("../app/components/InlineYouTubePlayer.tsx", import.meta.url),
