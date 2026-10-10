@@ -49,6 +49,10 @@ interface InlineYouTubePlayerProps {
   onRequestFullVod: () => void;
   onReadyChange?: (ready: boolean) => void;
   onStatusChange?: (status: PlaybackStatus) => void;
+  /**
+   * The video length, reported once when the player becomes ready. It is not
+   * re-reported during playback, so a timeline drawn on it never shifts.
+   */
   onDurationChange?: (seconds: number) => void;
   /** Rendered between the video and its playback caption. */
   timeline?: ReactNode;
@@ -274,8 +278,6 @@ export const InlineYouTubePlayer = forwardRef<
               if (cancelled) return;
 
               if (event.data === youtube.PlayerState.PLAYING) {
-                // Metadata can still be missing at onReady; playback has it.
-                reportDuration(event.target);
                 const activeRequest = requestRef.current;
                 if (
                   activeRequest?.endSeconds !== undefined &&
