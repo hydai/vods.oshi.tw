@@ -10,8 +10,13 @@ import {
   useImperativeHandle,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
-import { loadYouTubeApi, type YouTubePlayer } from "../../lib/youtube-api";
+import {
+  loadYouTubeApi,
+  readVideoDuration,
+  type YouTubePlayer,
+} from "../../lib/youtube-api";
 
 export interface PlaybackRequest {
   requestId: number;
@@ -32,6 +37,8 @@ export type PlaybackStatus =
 
 export interface InlineYouTubePlayerHandle {
   play(request: PlaybackRequest): boolean;
+  /** Playback position in seconds, or null until the player is ready. */
+  getCurrentTime(): number | null;
 }
 
 interface InlineYouTubePlayerProps {
@@ -42,6 +49,13 @@ interface InlineYouTubePlayerProps {
   onRequestFullVod: () => void;
   onReadyChange?: (ready: boolean) => void;
   onStatusChange?: (status: PlaybackStatus) => void;
+  /**
+   * The video length, reported once when the player becomes ready. It is not
+   * re-reported during playback, so a timeline drawn on it never shifts.
+   */
+  onDurationChange?: (seconds: number) => void;
+  /** Rendered between the video and its playback caption. */
+  timeline?: ReactNode;
 }
 
 function formatTimestamp(seconds: number): string {
@@ -76,6 +90,8 @@ export const InlineYouTubePlayer = forwardRef<
     onRequestFullVod,
     onReadyChange,
     onStatusChange,
+    onDurationChange,
+    timeline,
   },
   ref,
 ) {
@@ -88,6 +104,7 @@ export const InlineYouTubePlayer = forwardRef<
   const statusRef = useRef<PlaybackStatus>("idle");
   const onReadyChangeRef = useRef(onReadyChange);
   const onStatusChangeRef = useRef(onStatusChange);
+  const onDurationChangeRef = useRef(onDurationChange);
   const onRequestFullVodRef = useRef(onRequestFullVod);
   const [ready, setReady] = useState(false);
   const [status, setStatus] = useState<PlaybackStatus>("idle");
@@ -101,8 +118,9 @@ export const InlineYouTubePlayer = forwardRef<
   useEffect(() => {
     onReadyChangeRef.current = onReadyChange;
     onStatusChangeRef.current = onStatusChange;
+    onDurationChangeRef.current = onDurationChange;
     onRequestFullVodRef.current = onRequestFullVod;
-  }, [onReadyChange, onRequestFullVod, onStatusChange]);
+  }, [onDurationChange, onReadyChange, onRequestFullVod, onStatusChange]);
 
   const publishStatus = useCallback((nextStatus: PlaybackStatus) => {
     statusRef.current = nextStatus;
@@ -197,6 +215,13 @@ export const InlineYouTubePlayer = forwardRef<
         applyRequest(player, nextRequest);
         return true;
       },
+      getCurrentTime() {
+        const player = playerRef.current;
+        // A constructed player only gains its methods once YouTube is ready.
+        if (typeof player?.getCurrentTime !== "function") return null;
+        const seconds = player.getCurrentTime();
+        return Number.isFinite(seconds) ? seconds : null;
+      },
     }),
     [applyRequest, publishStatus],
   );
@@ -220,6 +245,11 @@ export const InlineYouTubePlayer = forwardRef<
         const mount = document.createElement("div");
         mountRoot.replaceChildren(mount);
 
+        const reportDuration = (target: YouTubePlayer) => {
+          const duration = readVideoDuration(target);
+          if (duration !== null) onDurationChangeRef.current?.(duration);
+        };
+
         const player = new youtube.Player(mount, {
           videoId,
           playerVars: {
@@ -234,6 +264,7 @@ export const InlineYouTubePlayer = forwardRef<
               if (cancelled) return;
               playerRef.current = event.target;
               setReady(true);
+              reportDuration(event.target);
               onReadyChangeRef.current?.(true);
 
               const queuedRequest = requestRef.current;
@@ -409,6 +440,8 @@ export const InlineYouTubePlayer = forwardRef<
           </div>
         )}
       </div>
+
+      {timeline}
 
       <div className="inline-player-caption" aria-live="polite">
         <span className={`player-status-dot is-${status}`} aria-hidden="true" />

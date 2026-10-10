@@ -23,7 +23,8 @@ import {
   Youtube,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { resolveTimelineScale } from "../../lib/song-timeline";
 import { buildVideoDownloadCommand } from "../../lib/video-download-command";
 import type {
   VodCardData,
@@ -41,6 +42,7 @@ import {
   type PlaybackRequest,
   type PlaybackStatus,
 } from "./InlineYouTubePlayer";
+import { SongTimeline } from "./SongTimeline";
 import { ThemeToggle } from "./ThemeToggle";
 
 function formatTimestamp(seconds: number): string {
@@ -146,6 +148,9 @@ export function VodDetail({
   const [playbackRequest, setPlaybackRequest] =
     useState<PlaybackRequest | null>(null);
   const [playbackStatus, setPlaybackStatus] = useState<PlaybackStatus>("idle");
+  const [hasStartedPlayback, setHasStartedPlayback] = useState(false);
+  const [playerReady, setPlayerReady] = useState(false);
+  const [videoDuration, setVideoDuration] = useState<number | null>(null);
   const requestSequence = useRef(0);
   const playerAnchor = useRef<HTMLDivElement>(null);
   const inlinePlayer = useRef<InlineYouTubePlayerHandle>(null);
@@ -164,6 +169,16 @@ export function VodDetail({
       }
     },
     [],
+  );
+
+  const readCurrentTime = useCallback(
+    () => inlinePlayer.current?.getCurrentTime() ?? null,
+    [],
+  );
+  const timelineScale = resolveTimelineScale(
+    vod.performances,
+    videoDuration,
+    playerReady || playbackStatus === "error",
   );
 
   const songs = useMemo(() => {
@@ -208,6 +223,20 @@ export function VodDetail({
       title: vod.title,
       startSeconds: 0,
     });
+  }
+
+  function playSong(song: VodExportVod["performances"][number]) {
+    playInPage({
+      performanceId: song.performanceId,
+      title: song.title,
+      startSeconds: song.startSeconds,
+      endSeconds: song.endSeconds,
+    });
+  }
+
+  function handlePlaybackStatus(status: PlaybackStatus) {
+    setPlaybackStatus(status);
+    if (status === "playing") setHasStartedPlayback(true);
   }
 
   async function copyVideoCommand(
@@ -276,7 +305,20 @@ export function VodDetail({
               thumbnailUrl={`https://i.ytimg.com/vi/${encodeURIComponent(vod.videoId)}/hqdefault.jpg`}
               request={playbackRequest}
               onRequestFullVod={playFullVod}
-              onStatusChange={setPlaybackStatus}
+              onStatusChange={handlePlaybackStatus}
+              onReadyChange={setPlayerReady}
+              onDurationChange={setVideoDuration}
+              timeline={
+                <SongTimeline
+                  performances={vod.performances}
+                  scaleSeconds={timelineScale}
+                  activePerformanceId={playbackRequest?.performanceId ?? null}
+                  playbackStatus={playbackStatus}
+                  showPlayhead={hasStartedPlayback}
+                  getCurrentTime={readCurrentTime}
+                  onSelect={playSong}
+                />
+              }
             />
           </div>
 
@@ -406,14 +448,7 @@ export function VodDetail({
                   <button
                     type="button"
                     className={`song-row${isActive ? " is-active" : ""}`}
-                    onClick={() =>
-                      playInPage({
-                        performanceId: song.performanceId,
-                        title: song.title,
-                        startSeconds: song.startSeconds,
-                        endSeconds: song.endSeconds,
-                      })
-                    }
+                    onClick={() => playSong(song)}
                     aria-current={isActive ? "true" : undefined}
                     aria-label={`在此頁播放 ${song.title}，${formatTimestamp(song.startSeconds)} 到 ${formatTimestamp(song.endSeconds)}`}
                   >

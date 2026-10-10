@@ -1,6 +1,7 @@
 export interface YouTubePlayer {
   destroy(): void;
   getCurrentTime(): number;
+  getDuration(): number;
   loadVideoById(options: {
     videoId: string;
     startSeconds?: number;
@@ -59,6 +60,14 @@ declare global {
 }
 
 let youtubeApiPromise: Promise<YouTubeNamespace> | null = null;
+
+/** The video length in seconds, or null while YouTube still reports 0. */
+export function readVideoDuration(
+  player: Pick<YouTubePlayer, "getDuration">,
+): number | null {
+  const duration = player.getDuration();
+  return Number.isFinite(duration) && duration > 0 ? duration : null;
+}
 
 export function loadYouTubeApi(): Promise<YouTubeNamespace> {
   if (window.YT?.Player) return Promise.resolve(window.YT);
